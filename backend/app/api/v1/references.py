@@ -64,15 +64,15 @@ async def get_periods_for_year(
         conn: asyncpg.Connection = Depends(get_db_connection),
 ):
     repo = ReferenceRepository(conn)
-    sy_sql = "SELECT syid FROM public.studyyears WHERE school_year = $1 OR number = $2 LIMIT 1;"
-    row = await conn.fetchrow(sy_sql, year, str(year))
+    sy_sql = "SELECT school_year FROM public.studyyears WHERE name = $1 OR number = $2 OR school_year = $3 LIMIT 1;"
+    row = await conn.fetchrow(sy_sql, str(year), str(year)[-2:], year)
     if not row:
-        row = await conn.fetchrow("SELECT syid FROM public.studyyears ORDER BY syid DESC LIMIT 1;")
+        row = await conn.fetchrow("SELECT school_year FROM public.studyyears ORDER BY school_year DESC LIMIT 1;")
 
     if not row:
         raise HTTPException(status_code=404, detail="Учебный год не найден в базе")
 
-    s_year_id = row["syid"]
+    s_year_id = row["school_year"]
     periods = await repo.get_periods_by_year_id(s_year_id)
 
     return {
@@ -95,8 +95,8 @@ async def get_periods_for_date(
     repo = ReferenceRepository(conn)
     s_year_id = await repo.get_study_year_by_date(target_date)
     if not s_year_id:
-        row = await conn.fetchrow("SELECT syid FROM public.studyyears ORDER BY syid DESC LIMIT 1;")
-        s_year_id = row["syid"] if row else None
+        row = await conn.fetchrow("SELECT school_year FROM public.studyyears ORDER BY school_year DESC LIMIT 1;")
+        s_year_id = row["school_year"] if row else None
 
     if not s_year_id:
         raise HTTPException(status_code=404, detail="Не удалось определить учебный год для указанной даты")

@@ -12,6 +12,13 @@ from ...schemas.recommendations import (
     SlotCandidatesResponse,
     CourseTeachersQuery,
     CourseTeachersResponse,
+    MathematicalRecommendationsQuery,
+    AIRecommendationsQuery,
+    RecommendationsListResponse,
+    SmartRecommendationRequest,
+    SmartRecommendationResponse,
+    FreeSlotSuggestionRequest,
+    FreeSlotSuggestionResponse,
 )
 from ...repositories.recommendations import RecommendationsRepository
 from ...repositories.schedule import ScheduleRepository
@@ -113,3 +120,77 @@ async def find_teachers_for_course(
             detail="Дисциплина не найдена либо не указана"
         )
     return result
+
+
+@router.post("/math", response_model=RecommendationsListResponse, summary="Математические рекомендации преподавателей")
+@router.post("/getTeacherRecommendations", response_model=RecommendationsListResponse, summary="Алиас: математические рекомендации преподавателей")
+async def get_math_recommendations(
+    payload: MathematicalRecommendationsQuery,
+    conn: asyncpg.Connection = Depends(get_db_connection),
+):
+    rec_repo = RecommendationsRepository(conn)
+    return await rec_repo.get_mathematical_recommendations(
+        course_id=payload.course_id,
+        course_alias=payload.course_alias,
+        group_id=payload.group_id,
+        pair_type_id=payload.pair_type_id,
+        cathedra_id=payload.cathedra_id,
+        exclude_teacher_id=payload.exclude_teacher_id,
+    )
+
+
+@router.post("/ai", response_model=RecommendationsListResponse, summary="ИИ-рекомендации преподавателей")
+@router.post("/getAIRecommendations", response_model=RecommendationsListResponse, summary="Алиас: ИИ-рекомендации преподавателей")
+async def get_ai_recommendations(
+    payload: AIRecommendationsQuery,
+    conn: asyncpg.Connection = Depends(get_db_connection),
+):
+    rec_repo = RecommendationsRepository(conn)
+    return await rec_repo.get_ai_recommendations(
+        group_id=payload.group_id,
+        pair_type_id=payload.pair_type_id,
+        period_id=payload.period_id,
+        day_of_week=payload.day_of_week,
+        date_str=payload.date,
+        cathedra_id=payload.cathedra_id,
+        study_year_id=payload.study_year_id,
+        exclude_teacher_id=payload.exclude_teacher_id,
+        course_id=payload.course_id,
+        course_alias=payload.course_alias,
+    )
+
+
+@router.post("/smart-teachers", response_model=SmartRecommendationResponse, summary="Умный подбор преподавателей (Weighted Jaccard & CSP)")
+async def recommend_smart_teachers(
+    payload: SmartRecommendationRequest,
+    conn: asyncpg.Connection = Depends(get_db_connection),
+):
+    rec_repo = RecommendationsRepository(conn)
+    return await rec_repo.recommend_teachers_smart(
+        course_id=payload.course_id,
+        course_alias=payload.course_alias,
+        group_id=payload.group_id,
+        pair_type_id=payload.pair_type_id,
+        date_str=payload.date,
+        day_of_week=payload.day_of_week,
+        pair_index=payload.pair_index,
+        period_id=payload.period_id,
+        preferred_teacher_id=payload.preferred_teacher_id,
+        cathedra_id=payload.cathedra_id,
+        sh_var_id=payload.sh_var_id,
+    )
+
+
+@router.post("/suggest-slots", response_model=FreeSlotSuggestionResponse, summary="Подбор свободных окон для пары преподаватель + группа")
+async def suggest_free_slots(
+    payload: FreeSlotSuggestionRequest,
+    conn: asyncpg.Connection = Depends(get_db_connection),
+):
+    rec_repo = RecommendationsRepository(conn)
+    return await rec_repo.suggest_free_slots_for_pair(
+        teacher_id=payload.teacher_id,
+        group_id=payload.group_id,
+        date_str=payload.date,
+        sh_var_id=payload.sh_var_id,
+        s_year_id=payload.s_year_id,
+    )

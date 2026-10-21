@@ -6,6 +6,7 @@ class CatalogItem(BaseModel):
     """Базовый элемент справочника (ID + Название)."""
     id: int
     name: str
+    short_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,6 +27,8 @@ class TeacherItem(BaseModel):
     firstname: Optional[str] = None
     patronymic: Optional[str] = None
     full_name: str
+    category: Optional[int] = None
+    id_pmk: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -35,6 +38,7 @@ class GroupItem(BaseModel):
     id: int
     name: str
     faculty_id: Optional[int] = None
+    idfaculty: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,6 +51,7 @@ class AllReferencesResponse(BaseModel):
     groups: List[GroupItem]
     teachers: List[TeacherItem]
     pmk: List[CatalogItem]
+    faculties: Optional[List[CatalogItem]] = []
 
 
 class PeriodItem(BaseModel):

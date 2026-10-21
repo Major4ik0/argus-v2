@@ -13,7 +13,7 @@ class ReferenceRepository:
         return [dict(r) for r in rows]
 
     async def get_rooms(self) -> List[Dict[str, Any]]:
-        sql = "SELECT rid AS id, short_name AS name FROM rooms ORDER BY short_name;"
+        sql = "SELECT rid AS id, short_name AS name, short_name FROM rooms ORDER BY short_name;"
         rows = await self.conn.fetch(sql)
         return [dict(r) for r in rows]
 
@@ -23,12 +23,12 @@ class ReferenceRepository:
         return [dict(r) for r in rows]
 
     async def get_groups(self) -> List[Dict[str, Any]]:
-        sql = "SELECT gid AS id, name, idfaculty AS faculty_id FROM groupname ORDER BY name;"
+        sql = "SELECT gid AS id, name, idfaculty AS faculty_id, idfaculty FROM groupname ORDER BY name;"
         rows = await self.conn.fetch(sql)
         return [dict(r) for r in rows]
 
     async def get_teachers(self) -> List[Dict[str, Any]]:
-        """Получение преподавателей кафедры (строго ПМК 1 и 2)."""
+        """Преподаватели кафедры (строго ПМК 1 и 2)."""
         sql = """
             SELECT DISTINCT
                 p.mid AS id, 
@@ -36,7 +36,8 @@ class ReferenceRepository:
                 p.firstname, 
                 p.patronymic,
                 TRIM(CONCAT_WS(' ', p.lastname, p.firstname, p.patronymic)) AS full_name,
-                cp.id_pmk AS category
+                cp.id_pmk AS category,
+                cp.id_pmk AS id_pmk
             FROM public.people AS p
             JOIN public.cathedra_personnel AS cp ON p.mid = cp.mid
             WHERE cp.id_pmk IN (1, 2)
@@ -50,6 +51,18 @@ class ReferenceRepository:
         rows = await self.conn.fetch(sql)
         return [dict(r) for r in rows]
 
+    async def get_faculties(self) -> List[Dict[str, Any]]:
+        sql = """
+            SELECT 
+                idfaculty AS id, 
+                COALESCE("shortName", faculty, 'Факультет ' || idfaculty::text) AS name,
+                COALESCE("shortName", faculty, idfaculty::text) AS short_name
+            FROM public.fuculty 
+            ORDER BY idfaculty;
+        """
+        rows = await self.conn.fetch(sql)
+        return [dict(r) for r in rows]
+
     async def get_all_references(self) -> Dict[str, Any]:
         """Получение всех справочников в одном месте без лишних round-trip запросов."""
         return {
@@ -59,6 +72,7 @@ class ReferenceRepository:
             "groups": await self.get_groups(),
             "teachers": await self.get_teachers(),
             "pmk": await self.get_pmk(),
+            "faculties": await self.get_faculties(),
         }
 
     async def get_study_year_by_date(self, target_date: date) -> Optional[int]:
@@ -67,19 +81,19 @@ class ReferenceRepository:
         year_info = get_academic_year_info(target_date)
 
         sql = """
-            SELECT syid 
+            SELECT school_year 
             FROM public.studyyears 
-            WHERE school_year = $1 OR number = $2 OR name ILIKE $3
-            ORDER BY syid DESC 
+            WHERE name = $1 OR number = $2 OR school_year = $3
+            ORDER BY school_year DESC 
             LIMIT 1;
         """
         row = await self.conn.fetchrow(
             sql,
-            year_info["start_year"],
             str(year_info["start_year"]),
-            f"%{year_info['start_year']}%"
+            str(year_info["start_year"])[-2:],
+            year_info["start_year"]
         )
-        return row["syid"] if row else None
+        return row["school_year"] if row and row["school_year"] else 35
 
     async def get_periods_by_year_id(self, s_year_id: int) -> List[Dict[str, Any]]:
         """Получает список периодов (пар) для ID учебного года."""

@@ -1,0 +1,10 @@
+/.venv
+/.DS_Store
+/.idea
+/test
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+frontend/node_modules/
+frontend/dist/

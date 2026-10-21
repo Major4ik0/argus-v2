@@ -19,3 +19,196 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-slate-800 rounded-full hover:bg-slate-700 transition;
 }
+
+/* Печатные формы (A3 Landscape) */
+@page {
+  size: A3 landscape;
+  margin: 10mm 15mm;
+}
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* 1. Скрыть все элементы навигации, управления, диалоги и вспомогательные панели */
+  header,
+  aside,
+  nav,
+  .no-print,
+  button,
+  input,
+  select,
+  .modal,
+  [role="dialog"],
+  .swap-mode-indicator,
+  .notification {
+    display: none !important;
+  }
+
+  /* 2. Сброс цветов и разворачивание корневых контейнеров на всю высоту без скролла */
+  html,
+  body,
+  #root,
+  #root > div,
+  main,
+  .table-wrap,
+  .table-container,
+  div[class*="overflow-auto"],
+  div[class*="overflow-hidden"],
+  div[class*="overflow-y-auto"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  body {
+    font-size: 8.5pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* 3. Стили таблицы расписания */
+  table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: auto !important;
+    page-break-inside: auto !important;
+    border: 1px solid #94a3b8 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+    position: static !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  th,
+  td {
+    position: static !important;
+    border: 1px solid #94a3b8 !important;
+    color: #0f172a !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    padding: 3px 4px !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  th {
+    background: #f1f5f9 !important;
+    background-color: #f1f5f9 !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+  }
+
+  thead th {
+    background: #e2e8f0 !important;
+    background-color: #e2e8f0 !important;
+  }
+
+  /* Заголовок строки преподавателя */
+  tr[id^="teacher-row-"],
+  tr[id^="teacher-row-"] td {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    font-weight: bold !important;
+    border: 1px solid #64748b !important;
+  }
+
+  tr[id^="teacher-row-"] * {
+    color: #0f172a !important;
+    position: static !important;
+  }
+
+  /* 4. Карточки занятий в ячейках */
+  .modern-card,
+  .pair-card,
+  [data-card="true"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border: 1px solid #64748b !important;
+    border-left-width: 3px !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    padding: 2px 4px !important;
+    font-size: 8pt !important;
+    line-height: 1.2 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 2px !important;
+  }
+
+  .modern-card *,
+  .pair-card *,
+  [data-card="true"] * {
+    color: #0f172a !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  .modern-card span,
+  .pair-card span,
+  [data-card="true"] span {
+    color: #0f172a !important;
+  }
+
+  /* Скрыть скроллбары */
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 30s linear infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

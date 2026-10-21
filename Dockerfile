@@ -1,39 +1,43 @@
 # -------------------------------------------------------------
-# Этап 1: Сборка React-фронтенда
+# Этап 1: Сборка фронтенда (React + Vite)
 # -------------------------------------------------------------
 FROM node:20-alpine AS frontend-builder
-WORKDIR /build
-
-# Кэшируем установку npm-пакетов
+WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci
-
-# Копируем исходники фронтенда и собираем статичный бандл
+RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
 # -------------------------------------------------------------
-# Этап 2: Финальный образ FastAPI + скомпилированная статика
+# Этап 2: Финальный образ бэкенда (Python + OpenCV + ONNX)
 # -------------------------------------------------------------
 FROM python:3.11-slim
 WORKDIR /app
 
-# Установка системных утилит (если требуются для сборки)
+# Системные библиотеки для OpenCV и компиляции
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка зависимостей бэкенда
+# Зависимости Python
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем код бэкенда
-COPY backend/app ./app
+# Копирование бэкенда
+COPY backend/ /app/backend/
 
-# Забираем готовую статику фронтенда из первого этапа
-COPY --from=frontend-builder /build/dist ./static_dist
+# Копирование собранного фронтенда в статику бэкенда
+COPY --from=frontend-builder /app/frontend/dist /app/backend/static_dist
 
-EXPOSE 5123
+# Копирование офлайн-моделей InsightFace и legacy_qt
+COPY legacy_qt/ /app/legacy_qt/
 
-# Запуск приложения на боевом порту 5123
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5123"]
+ENV PYTHONPATH=/app/backend
+EXPOSE 8000
+
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
