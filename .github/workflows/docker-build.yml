@@ -1,4 +1,4 @@
-name: Build and Push Argus Docker Image
+name: Build Docker Image and Publish to Release
 
 on:
   push:
@@ -6,11 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  packages: write
+  contents: write
 
 jobs:
-  build-and-push:
+  build-and-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository with LFS
@@ -21,29 +20,56 @@ jobs:
       - name: Checkout LFS objects
         run: git lfs pull
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Extract version from commit message
+        id: get_version
+        run: |
+          # Получаем первую строку сообщения коммита
+          MSG="${{ github.event.head_commit.message }}"
+          FIRST_LINE=$(echo "$MSG" | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          
+          # Ищем шаблон версии вида v1, v2, v3, v3.1 или берем текст коммита
+          if [[ "$FIRST_LINE" =~ (v[0-9]+(\.[0-9]+)*) ]]; then
+            VER="${BASH_REMATCH[1]}"
+          elif [ -n "$FIRST_LINE" ] && [ ${#FIRST_LINE} -le 12 ]; then
+            VER="$FIRST_LINE"
+          else
+            VER="v3"
+          fi
+          
+          echo "RELEASE_TAG=$VER" >> $GITHUB_ENV
+          echo "Используется версия: $VER"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Lowercase repo name for GHCR
-        run: |
-          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/${{ env.REPO_LC }}:latest
-            ghcr.io/${{ env.REPO_LC }}:${{ github.sha }}
+          load: true
+          tags: argus-v2:${{ env.RELEASE_TAG }}
+
+      - name: Save Docker image to compressed tar
+        run: |
+          docker save argus-v2:${{ env.RELEASE_TAG }} | gzip > argus_${{ env.RELEASE_TAG }}.tar.gz
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "Argus ${{ env.RELEASE_TAG }} — Готовый контейнер для сервера"
+          body: |
+            Автономный образ Docker (версия ${{ env.RELEASE_TAG }}) для развертывания на закрытом сервере академии.
+
+            ### Инструкция по запуску:
+            1. Загрузить образ в Docker:
+               ```bash
+               gunzip -c argus_${{ env.RELEASE_TAG }}.tar.gz | docker load
+               ```
+            2. Запустить контейнер:
+               ```bash
+               docker run -d -p 8000:8000 --name argus-app --restart always argus-v2:${{ env.RELEASE_TAG }}
+               ```
+          files: argus_${{ env.RELEASE_TAG }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
