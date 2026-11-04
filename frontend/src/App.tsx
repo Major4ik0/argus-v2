@@ -184,6 +184,14 @@ export function App() {
     loadFacultyColors()
   }, [])
 
+  useEffect(() => {
+    if (isAdminModalOpen) {
+      document.title = 'АРГУС — Панель управления'
+    } else {
+      document.title = 'АРГУС — Расписание кафедры'
+    }
+  }, [isAdminModalOpen])
+
   const facultyColorsMap = useMemo(() => {
     const map: Record<number, string> = {}
     facultiesList.forEach((f) => {

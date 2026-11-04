@@ -143,18 +143,28 @@ async def upload_teacher_biometrics(
             detail="Лицо не обнаружено на изображении. Пожалуйста, выберите четкую портретную фотографию",
         )
 
-    # Сохраняем фото на диск
-    photo_filename = f"teacher_{teacher_id}.jpg"
-    photo_path = os.path.join(PHOTOS_DIR, photo_filename)
+    # 1. Получаем ФИО преподавателя
+    repo = KioskRepository(conn)
+    t_name = await conn.fetchval(
+        "SELECT TRIM(CONCAT_WS(' ', lastname, firstname, patronymic)) FROM public.people WHERE mid = $1;",
+        teacher_id,
+    ) or f"Преподаватель #{teacher_id}"
+
+    # 2. Сохраняем фото на диск по шаблону VisionAttend: backend/uploads/teachers/{teacher_id}__{full_name}.jpg
+    safe_name = t_name.replace("/", "_").replace("\\", "_")
+    photo_filename = f"{teacher_id}__{safe_name}.jpg"
+    photo_path = os.path.join(face_recognition_service.path_images, photo_filename)
     cv2.imwrite(photo_path, img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
-    # Сохраняем в базу данных
-    repo = KioskRepository(conn)
-    await repo.save_biometrics(teacher_id, photo_filename, embedding_bytes)
+    # Дубликат для обратной совместимости в PHOTOS_DIR
+    legacy_path = os.path.join(PHOTOS_DIR, f"teacher_{teacher_id}.jpg")
+    cv2.imwrite(legacy_path, img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
-    # Обновляем кэш эмбеддингов в памяти сервиса
-    all_embs = await repo.get_all_embeddings()
-    face_recognition_service.reload_embeddings(all_embs)
+    # 3. Мгновенно добавляем в память и сохраняем дисковый кэш face_cache_insightface.pkl (0.1 сек)
+    face_recognition_service.add_single_face(photo_path, teacher_id, t_name)
+
+    # 4. Сохраняем в PostgreSQL (для синхронизации и статуса has_photo: true)
+    await repo.save_biometrics(teacher_id, photo_filename, embedding_bytes)
 
     return BiometricsUploadResponse(
         success=True,
@@ -172,35 +182,12 @@ async def delete_teacher_biometrics(
 ):
     """Удаляет фото и вектор биометрии преподавателя с диска, из базы и из памяти."""
     repo = KioskRepository(conn)
-    photo_filename = await repo.get_biometric_photo_path(teacher_id)
 
+    # 1. Физическое удаление файлов с диска и из кэша face_cache_insightface.pkl
+    face_recognition_service.remove_face(teacher_id)
+
+    # 2. Удаление из базы данных
     success = await repo.delete_biometrics(teacher_id)
-
-    # 1. Физическое удаление файла с диска
-    if photo_filename:
-        full_path = os.path.join(PHOTOS_DIR, photo_filename)
-        if os.path.exists(full_path):
-            try:
-                os.remove(full_path)
-            except Exception:
-                pass
-
-    default_photo = os.path.join(PHOTOS_DIR, f"teacher_{teacher_id}.jpg")
-    if os.path.exists(default_photo):
-        try:
-            os.remove(default_photo)
-        except Exception:
-            pass
-
-    # 2. Удаление из памяти камеры
-    with face_recognition_service._teachers_lock:
-        face_recognition_service.known_teachers = [
-            t for t in face_recognition_service.known_teachers if t["teacher_id"] != teacher_id
-        ]
-
-    # 3. Полная перезагрузка базы биометрии
-    all_embs = await repo.get_all_embeddings()
-    face_recognition_service.reload_embeddings(all_embs)
 
     return {"status": "ok", "message": f"Биометрия преподавателя #{teacher_id} полностью удалена", "deleted": success}
 
@@ -227,19 +214,33 @@ async def get_teacher_photo(
     conn: asyncpg.Connection = Depends(get_db_connection),
 ):
     """Отдает сохраненную фотографию преподавателя либо SVG заглушку с отключением HTTP-кэширования."""
-    repo = KioskRepository(conn)
-    photo_filename = await repo.get_biometric_photo_path(teacher_id)
-
     no_cache_headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
     }
 
+    # 1. Поиск в backend/uploads/teachers/ по шаблону {teacher_id}__*.jpg
+    if os.path.exists(face_recognition_service.path_images):
+        prefix = f"{teacher_id}__"
+        for fn in os.listdir(face_recognition_service.path_images):
+            if fn.startswith(prefix) or fn == f"{teacher_id}.jpg" or fn == f"{teacher_id}.png":
+                fpath = os.path.join(face_recognition_service.path_images, fn)
+                if os.path.exists(fpath):
+                    return FileResponse(fpath, media_type="image/jpeg", headers=no_cache_headers)
+
+    # 2. Поиск по имени из БД или в legacy каталоге
+    repo = KioskRepository(conn)
+    photo_filename = await repo.get_biometric_photo_path(teacher_id)
     if photo_filename:
-        photo_full_path = os.path.join(PHOTOS_DIR, photo_filename)
-        if os.path.exists(photo_full_path):
-            return FileResponse(photo_full_path, media_type="image/jpeg", headers=no_cache_headers)
+        for b_dir in [face_recognition_service.path_images, PHOTOS_DIR]:
+            photo_full_path = os.path.join(b_dir, photo_filename)
+            if os.path.exists(photo_full_path):
+                return FileResponse(photo_full_path, media_type="image/jpeg", headers=no_cache_headers)
+
+    legacy_photo = os.path.join(PHOTOS_DIR, f"teacher_{teacher_id}.jpg")
+    if os.path.exists(legacy_photo):
+        return FileResponse(legacy_photo, media_type="image/jpeg", headers=no_cache_headers)
 
     # SVG заглушка
     svg_data = """<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

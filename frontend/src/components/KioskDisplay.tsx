@@ -92,6 +92,10 @@ export const KioskDisplay: React.FC = () => {
   })
 
   useEffect(() => {
+    document.title = 'АРГУС — Информационное табло'
+  }, [])
+
+  useEffect(() => {
     if (kioskTheme === 'dark') {
       document.documentElement.classList.add('dark')
     } else {

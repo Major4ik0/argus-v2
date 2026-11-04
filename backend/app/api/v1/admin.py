@@ -3,18 +3,19 @@
 import os
 import sys
 import json
+import asyncio
 import secrets
 import platform
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import cv2
 import asyncpg
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from pydantic import BaseModel
 
 from ...services.ad_auth import authenticate_ad
-from ...core.config import settings
-from ...core.database import get_db_connection
+from ...core.config import settings, DB_CONFIG_PATH, write_db_config_file
+from ...core.database import get_db_connection, restart_db_pool
 from ...services.camera import camera_service as face_recognition_service
 from ...repositories.kiosk import KioskRepository
 
@@ -441,4 +442,156 @@ async def get_system_monitoring(conn: asyncpg.Connection = Depends(get_db_connec
             "python": sys.version.split()[0],
             "opencv": getattr(cv2, "__version__", "unknown"),
         },
+    }
+
+
+# =====================================================================
+# НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К POSTGRESQL И УПРАВЛЕНИЕ ПУЛОМ
+# =====================================================================
+
+class DatabaseConfigResponse(BaseModel):
+    host: str
+    port: int
+    db_name: str
+    user: str
+    password: str = "••••••••"
+    is_custom: bool = False
+
+
+class DatabaseConfigPayload(BaseModel):
+    host: str
+    port: int = 5432
+    db_name: str
+    user: str
+    password: Optional[str] = None
+
+
+@router.get("/database/config", response_model=DatabaseConfigResponse)
+async def get_database_config():
+    """Текущие параметры подключения к PostgreSQL."""
+    is_custom = DB_CONFIG_PATH.exists()
+    return DatabaseConfigResponse(
+        host=settings.DB_HOST,
+        port=settings.DB_PORT,
+        db_name=settings.DB_NAME,
+        user=settings.DB_USER,
+        password="••••••••",
+        is_custom=is_custom,
+    )
+
+
+@router.post("/database/test")
+async def test_database_connection(payload: DatabaseConfigPayload):
+    """Тестовое подключение к PostgreSQL с переданными реквизитами."""
+    actual_password = payload.password
+    if not actual_password or actual_password == "••••••••":
+        actual_password = settings.DB_PASSWORD
+
+    try:
+        conn = await asyncio.wait_for(
+            asyncpg.connect(
+                host=payload.host.strip(),
+                port=int(payload.port),
+                user=payload.user.strip(),
+                password=str(actual_password),
+                database=payload.db_name.strip(),
+                timeout=3.0,
+            ),
+            timeout=3.5,
+        )
+        await conn.fetchval("SELECT 1")
+        await conn.close()
+        return {
+            "success": True,
+            "message": "Соединение с базой данных успешно установлено",
+        }
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "detail": "Превышено время ожидания ответа от сервера БД (таймаут 3 сек)",
+        }
+    except Exception as e:
+        err_msg = str(e).strip() or type(e).__name__
+        return {
+            "success": False,
+            "detail": f"Ошибка подключения к БД: {err_msg}",
+        }
+
+
+@router.post("/database/save")
+async def save_database_config(payload: DatabaseConfigPayload, request: Request):
+    """Сохранение конфигурации БД, перезапуск пула и автозагрузка биометрии."""
+    if not payload.host or not payload.db_name or not payload.user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Поля 'Хост', 'Имя базы данных' и 'Пользователь' обязательны для заполнения",
+        )
+
+    actual_password = payload.password
+    if not actual_password or actual_password == "••••••••":
+        actual_password = settings.DB_PASSWORD
+
+    # 1. Проверяем соединение перед сохранением
+    try:
+        conn = await asyncio.wait_for(
+            asyncpg.connect(
+                host=payload.host.strip(),
+                port=int(payload.port),
+                user=payload.user.strip(),
+                password=str(actual_password),
+                database=payload.db_name.strip(),
+                timeout=3.0,
+            ),
+            timeout=3.5,
+        )
+        await conn.fetchval("SELECT 1")
+        await conn.close()
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "detail": "Не удалось подключиться: превышено время ожидания ответа сервера (таймаут 3 сек)",
+        }
+    except Exception as e:
+        err_msg = str(e).strip() or type(e).__name__
+        return {
+            "success": False,
+            "detail": f"Не удалось подключиться с указанными параметрами: {err_msg}",
+        }
+
+    # 2. Сохраняем в backend/data/db_config.json
+    config_dict = {
+        "host": payload.host.strip(),
+        "port": int(payload.port),
+        "db_name": payload.db_name.strip(),
+        "user": payload.user.strip(),
+        "password": str(actual_password),
+    }
+    write_db_config_file(config_dict)
+
+    # 3. Обновляем settings в памяти
+    settings.DB_HOST = config_dict["host"]
+    settings.DB_PORT = config_dict["port"]
+    settings.DB_NAME = config_dict["db_name"]
+    settings.DB_USER = config_dict["user"]
+    settings.DB_PASSWORD = config_dict["password"]
+
+    # 4. Горячая перезагрузка пула соединений
+    try:
+        new_pool = await restart_db_pool()
+        request.app.state.db_pool = new_pool
+    except Exception as e:
+        return {
+            "success": False,
+            "detail": f"Конфигурация сохранена, но возникла ошибка при перезапуске пула: {str(e)}",
+        }
+
+    # 5. Автозагрузка биометрии из новой базы данных
+    try:
+        await face_recognition_service.load_biometrics_from_db(new_pool)
+    except Exception as e:
+        print(f"Предупреждение: ошибка перезагрузки биометрии после смены БД: {e}")
+
+    return {
+        "success": True,
+        "message": "Настройки сохранены. Пул соединений обновлен.",
     }

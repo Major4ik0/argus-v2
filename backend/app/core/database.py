@@ -72,6 +72,30 @@ async def close_db_pool() -> None:
     global pool
     if pool:
         await pool.close()
+        pool = None
+
+
+async def restart_db_pool() -> asyncpg.Pool:
+    """Горячая перезагрузка пула подключений к PostgreSQL с новыми параметрами settings."""
+    global pool
+    if pool:
+        try:
+            await pool.close()
+        except Exception as e:
+            print(f"Предупреждение при закрытии предыдущего пула: {e}")
+        pool = None
+
+    pool = await asyncpg.create_pool(
+        host=settings.DB_HOST,
+        port=settings.DB_PORT,
+        user=settings.DB_USER,
+        password=settings.DB_PASSWORD,
+        database=settings.DB_NAME,
+        min_size=2,
+        max_size=10,
+    )
+    await init_kiosk_tables()
+    return pool
 
 
 async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:

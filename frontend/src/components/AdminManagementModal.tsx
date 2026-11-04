@@ -14,9 +14,14 @@ import {
   Cpu,
   Clock,
   CheckCircle2,
+  AlertCircle,
   Sun,
   Moon,
   Users,
+  Eye,
+  EyeOff,
+  Save,
+  Loader2,
 } from 'lucide-react'
 import { AdminKioskTab } from './AdminKioskTab'
 
@@ -94,7 +99,29 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
   siteTheme = 'light',
   onSiteThemeChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'theming' | 'access' | 'kiosk'>('monitoring')
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'theming' | 'access' | 'kiosk' | 'database'>('monitoring')
+
+  // Вкладка: База данных
+  const [dbConfig, setDbConfig] = useState<{
+    host: string
+    port: number
+    db_name: string
+    user: string
+    password: string
+    is_custom: boolean
+  }>({
+    host: '',
+    port: 5432,
+    db_name: '',
+    user: '',
+    password: '',
+    is_custom: false,
+  })
+  const [showDbPassword, setShowDbPassword] = useState(false)
+  const [testingDb, setTestingDb] = useState(false)
+  const [savingDb, setSavingDb] = useState(false)
+  const [dbTestResult, setDbTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [dbSaveResult, setDbSaveResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // Вкладка: Мониторинг
   const [monitoring, setMonitoring] = useState<SystemMonitoringData | null>(null)
@@ -157,11 +184,93 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
     }
   }
 
+  // Загрузка конфигурации БД
+  const loadDbConfig = async () => {
+    try {
+      const res = await axios.get('/api/v1/admin/database/config')
+      setDbConfig(res.data)
+      setDbTestResult(null)
+      setDbSaveResult(null)
+    } catch (err) {
+      console.error('Ошибка загрузки конфигурации БД:', err)
+    }
+  }
+
+  // Тестирование соединения с БД
+  const handleTestDbConnection = async () => {
+    setTestingDb(true)
+    setDbTestResult(null)
+    setDbSaveResult(null)
+    try {
+      const res = await axios.post('/api/v1/admin/database/test', {
+        host: dbConfig.host,
+        port: Number(dbConfig.port),
+        db_name: dbConfig.db_name,
+        user: dbConfig.user,
+        password: dbConfig.password,
+      })
+      if (res.data.success) {
+        setDbTestResult({
+          success: true,
+          message: res.data.message || 'Соединение с базой данных успешно установлено',
+        })
+      } else {
+        setDbTestResult({
+          success: false,
+          message: res.data.detail || 'Не удалось установить соединение',
+        })
+      }
+    } catch (err: any) {
+      setDbTestResult({
+        success: false,
+        message: err.response?.data?.detail || 'Ошибка сети при обращении к серверу',
+      })
+    } finally {
+      setTestingDb(false)
+    }
+  }
+
+  // Сохранение конфигурации БД
+  const handleSaveDbConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingDb(true)
+    setDbSaveResult(null)
+    try {
+      const res = await axios.post('/api/v1/admin/database/save', {
+        host: dbConfig.host,
+        port: Number(dbConfig.port),
+        db_name: dbConfig.db_name,
+        user: dbConfig.user,
+        password: dbConfig.password,
+      })
+      if (res.data.success) {
+        setDbSaveResult({
+          success: true,
+          message: res.data.message || 'Настройки сохранены. Пул соединений обновлен.',
+        })
+        await loadDbConfig()
+      } else {
+        setDbSaveResult({
+          success: false,
+          message: res.data.detail || 'Ошибка при сохранении конфигурации',
+        })
+      }
+    } catch (err: any) {
+      setDbSaveResult({
+        success: false,
+        message: err.response?.data?.detail || 'Ошибка при отправке запроса',
+      })
+    } finally {
+      setSavingDb(false)
+    }
+  }
+
   useEffect(() => {
     if (isOpen) {
       loadMonitoring()
       loadTheming()
       loadAdmins()
+      loadDbConfig()
       setAccessError(null)
       setAccessSuccess(null)
     }
@@ -352,6 +461,19 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
           >
             <Camera className="w-3.5 h-3.5" />
             <span>Камера и биометрия</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('database')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+              activeTab === 'database'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>База данных</span>
           </button>
         </div>
 
@@ -834,6 +956,189 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
           {activeTab === 'kiosk' && (
             <div className="h-full">
               <AdminKioskTab onClose={onClose} />
+            </div>
+          )}
+
+          {/* ================= ВКЛАДКА 5: БАЗА ДАННЫХ ================= */}
+          {activeTab === 'database' && (
+            <div className="space-y-5 max-w-2xl mx-auto py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Database className="w-4 h-4 text-amber-500" />
+                    <span>Параметры подключения к PostgreSQL</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Настройка хоста, порта и учетных данных с горячим перезапуском пула соединений без входа в контейнер.
+                  </p>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
+                    dbConfig.is_custom
+                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                  }`}
+                >
+                  {dbConfig.is_custom ? 'Конфигурация data/db_config.json' : 'По умолчанию (.env)'}
+                </span>
+              </div>
+
+              {/* Уведомление о проверке подключения */}
+              {dbTestResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-center gap-2.5 ${
+                    dbTestResult.success
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  }`}
+                >
+                  {dbTestResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                  )}
+                  <span>{dbTestResult.message}</span>
+                </div>
+              )}
+
+              {/* Уведомление о сохранении */}
+              {dbSaveResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-center gap-2.5 ${
+                    dbSaveResult.success
+                      ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800 text-sky-800 dark:text-sky-300'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  }`}
+                >
+                  {dbSaveResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                  )}
+                  <span>{dbSaveResult.message}</span>
+                </div>
+              )}
+
+              {/* Форма параметров */}
+              <form onSubmit={handleSaveDbConfig} className="space-y-4">
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Хост сервера
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={dbConfig.host}
+                        onChange={(e) => setDbConfig({ ...dbConfig, host: e.target.value })}
+                        placeholder="localhost или 192.168.1.100"
+                        className="w-full px-3 py-2 rounded-xl border text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Порт
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        value={dbConfig.port}
+                        onChange={(e) => setDbConfig({ ...dbConfig, port: Number(e.target.value) || 5432 })}
+                        placeholder="5432"
+                        className="w-full px-3 py-2 rounded-xl border text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Имя базы данных
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={dbConfig.db_name}
+                        onChange={(e) => setDbConfig({ ...dbConfig, db_name: e.target.value })}
+                        placeholder="organaizer12"
+                        className="w-full px-3 py-2 rounded-xl border text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Пользователь
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={dbConfig.user}
+                        onChange={(e) => setDbConfig({ ...dbConfig, user: e.target.value })}
+                        placeholder="postgres"
+                        className="w-full px-3 py-2 rounded-xl border text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Пароль
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showDbPassword ? 'text' : 'password'}
+                        value={dbConfig.password}
+                        onChange={(e) => setDbConfig({ ...dbConfig, password: e.target.value })}
+                        placeholder="Введите новый пароль или оставьте без изменений"
+                        className="w-full pl-3 pr-10 py-2 rounded-xl border text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowDbPassword(!showDbPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-1"
+                        title={showDbPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      >
+                        {showDbPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 block">
+                      Если пароль не меняется, оставьте значение без изменений.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Блок управления */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTestDbConnection}
+                    disabled={testingDb || savingDb}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center gap-2 transition disabled:opacity-50"
+                  >
+                    {testingDb ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                    )}
+                    <span>{testingDb ? 'Проверка связи...' : 'Проверить подключение'}</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={testingDb || savingDb}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-2 transition shadow-sm disabled:opacity-50"
+                  >
+                    {savingDb ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    <span>{savingDb ? 'Сохранение и перезапуск пула...' : 'Сохранить и применить'}</span>
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>

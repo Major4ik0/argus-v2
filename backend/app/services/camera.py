@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import queue
+import pickle
 import logging
 import platform
 import threading
@@ -20,7 +21,10 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 YUNET_PATH = os.path.join(MODELS_DIR, "face_detection_yunet.onnx")
 SFACE_PATH = os.path.join(MODELS_DIR, "face_recognition_sface.onnx")
 PHOTOS_DIR = os.path.join(BASE_DIR, "uploads", "photos")
+TEACHERS_DIR = os.path.join(BASE_DIR, "uploads", "teachers")
+CACHE_FILE = os.path.join(TEACHERS_DIR, "face_cache_insightface.pkl")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
+os.makedirs(TEACHERS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 
@@ -177,8 +181,16 @@ class FaceRecognitionCamera:
         self.output_frame: Optional[np.ndarray] = None
         self.cap: Optional[cv2.VideoCapture] = None
 
+        self.path_images = TEACHERS_DIR
+        self.cache_file = CACHE_FILE
+        os.makedirs(self.path_images, exist_ok=True)
+
         self.known_teachers: List[Dict[str, Any]] = []
+        self.known_face_encodings: List[np.ndarray] = []
+        self.known_face_names: List[str] = []
+        self.known_teacher_ids: List[int] = []
         self._teachers_lock = threading.Lock()
+        self.inference_lock = self._teachers_lock
         self.flip_horizontal: bool = True
 
         # Сглаживание предсказаний и кулдауны
@@ -192,13 +204,264 @@ class FaceRecognitionCamera:
 
         self.log_callback: Optional[Callable[[int, float], Any]] = None
 
+        # Синхронная загрузка базы эталонов при старте (архитектура VisionAttend)
+        self.load_known_faces()
+
         # Автозапуск рабочих потоков видеозахвата
         self.start_threads()
+
+    def _extract_face_embedding(self, image_path: str) -> Optional[np.ndarray]:
+        """Извлечение L2-нормализованного вектора лица из файла изображения."""
+        if not os.path.exists(image_path):
+            return None
+        img = cv2.imread(image_path)
+        if img is None or img.size == 0:
+            return None
+        results = self.vision.detect_and_align(img)
+        if not results:
+            return None
+        results.sort(key=lambda item: item[2], reverse=True)
+        _, aligned, _ = results[0]
+        feat = self.vision.extract_feature(aligned)
+        norm = np.linalg.norm(feat)
+        if norm > 1e-6:
+            feat = feat / norm
+            return feat.flatten().astype(np.float32)
+        return None
+
+    def _save_cache(self):
+        """Сохранение векторов в бинарный pickle-кэш."""
+        try:
+            with open(self.cache_file, "wb") as f:
+                pickle.dump({
+                    "encodings": self.known_face_encodings,
+                    "names": self.known_face_names,
+                    "ids": self.known_teacher_ids
+                }, f)
+        except Exception as e:
+            print(f"[InsightFace] Ошибка сохранения кэша: {e}")
+
+    def load_known_faces(self):
+        """Синхронная загрузка эталонов с диска / из кэша (архитектура VisionAttend)."""
+        # 1. Попытка быстрой загрузки из pickle-кэша
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "rb") as f:
+                    cache_data = pickle.load(f)
+                with self.inference_lock:
+                    self.known_face_encodings = cache_data.get("encodings", [])
+                    self.known_face_names = cache_data.get("names", [])
+                    self.known_teacher_ids = cache_data.get("ids", [])
+                    self.known_teachers = [
+                        {"teacher_id": tid, "full_name": tname, "vector": enc}
+                        for tid, tname, enc in zip(self.known_teacher_ids, self.known_face_names, self.known_face_encodings)
+                    ]
+                print(f"[InsightFace] Быстрая загрузка из кэша: {len(self.known_face_encodings)} преподавателей.")
+                return
+            except Exception as e:
+                print(f"[InsightFace] Ошибка чтения кэша, пересборка: {e}")
+
+        # 2. Если кэша нет — сканируем директорию uploads/teachers/
+        if not os.path.exists(self.path_images):
+            return
+
+        new_encodings = []
+        new_names = []
+        new_ids = []
+
+        for item in sorted(os.listdir(self.path_images)):
+            item_path = os.path.join(self.path_images, item)
+            if item.startswith('.') or item == os.path.basename(self.cache_file):
+                continue
+
+            teacher_id = None
+            teacher_name = "Unknown"
+
+            if os.path.isfile(item_path) and item.lower().endswith(('.jpg', '.jpeg', '.png')):
+                base_name = os.path.splitext(item)[0]
+                if "__" in base_name:
+                    parts = base_name.split("__", 1)
+                    teacher_id = int(parts[0]) if parts[0].isdigit() else None
+                    teacher_name = parts[1]
+                else:
+                    teacher_name = base_name
+
+                emb = self._extract_face_embedding(item_path)
+                if emb is not None:
+                    new_encodings.append(emb)
+                    new_names.append(teacher_name)
+                    new_ids.append(teacher_id)
+
+        with self.inference_lock:
+            self.known_face_encodings = new_encodings
+            self.known_face_names = new_names
+            self.known_teacher_ids = new_ids
+            self.known_teachers = [
+                {"teacher_id": tid, "full_name": tname, "vector": enc}
+                for tid, tname, enc in zip(new_ids, new_names, new_encodings)
+            ]
+
+        # Сохраняем в кэш
+        self._save_cache()
+        print(f"[InsightFace] База загружена с диска: {len(new_encodings)} лиц.")
+
+    def add_single_face(self, image_path: str, teacher_id: int, teacher_name: str) -> bool:
+        """
+        Извлекает эмбеддинг из переданного файла, добавляет в списки под self.inference_lock,
+        вызывает self._save_cache(). Время работы — 0.1 секунды, видеопоток не прерывается.
+        """
+        emb = self._extract_face_embedding(image_path)
+        if emb is None:
+            return False
+
+        with self.inference_lock:
+            if teacher_id in self.known_teacher_ids:
+                idx = self.known_teacher_ids.index(teacher_id)
+                self.known_face_encodings[idx] = emb
+                self.known_face_names[idx] = teacher_name
+            else:
+                self.known_face_encodings.append(emb)
+                self.known_face_names.append(teacher_name)
+                self.known_teacher_ids.append(teacher_id)
+
+            self.known_teachers = [
+                {"teacher_id": tid, "full_name": tname, "vector": enc}
+                for tid, tname, enc in zip(self.known_teacher_ids, self.known_face_names, self.known_face_encodings)
+            ]
+
+        self._save_cache()
+        print(f"[InsightFace] Добавлен профиль преподавателя #{teacher_id} ({teacher_name}). Всего: {len(self.known_face_encodings)}")
+        return True
+
+    def remove_face(self, teacher_id: int) -> bool:
+        """
+        Удаляет запись из списков по teacher_id, перезаписывает кэш
+        и удаляет соответствующий файл фотографии из backend/uploads/teachers/.
+        """
+        with self.inference_lock:
+            indices = [i for i, tid in enumerate(self.known_teacher_ids) if tid == teacher_id]
+            for idx in reversed(indices):
+                del self.known_face_encodings[idx]
+                del self.known_face_names[idx]
+                del self.known_teacher_ids[idx]
+
+            self.known_teachers = [
+                t for t in self.known_teachers if t.get("teacher_id") != teacher_id
+            ]
+
+        self._save_cache()
+
+        # Удаление файлов с диска
+        if os.path.exists(self.path_images):
+            prefix = f"{teacher_id}__"
+            for f in os.listdir(self.path_images):
+                if f.startswith(prefix) or f == f"{teacher_id}.jpg" or f == f"{teacher_id}.png":
+                    try:
+                        os.remove(os.path.join(self.path_images, f))
+                    except Exception:
+                        pass
+
+        for p_name in [f"teacher_{teacher_id}.jpg", f"teacher_{teacher_id}.png"]:
+            old_p = os.path.join(PHOTOS_DIR, p_name)
+            if os.path.exists(old_p):
+                try:
+                    os.remove(old_p)
+                except Exception:
+                    pass
+
+        print(f"[InsightFace] Удален профиль преподавателя #{teacher_id}. Осталось: {len(self.known_face_encodings)}")
+        return True
 
     def start_threads(self):
         """Запуск фоновых потоков захвата и обработки видео."""
         if not self._running:
             self.start(camera_source=self.camera_source)
+
+    def stop_threads(self):
+        """Остановка фоновых потоков захвата и обработки видео."""
+        self.stop()
+
+    async def load_biometrics_from_db(self, pool=None):
+        """Загрузка сохраненных векторов лиц преподавателей из PostgreSQL в оперативную память камеры."""
+        if pool is None:
+            from app.core.database import pool as db_pool
+            pool = db_pool
+        if pool is None:
+            print("[Биометрия] Пул соединений с БД недоступен для загрузки эталонов.")
+            return
+
+        query = """
+            SELECT tb.teacher_id, tb.embedding, tb.photo_path,
+                   TRIM(CONCAT_WS(' ', p.lastname, p.firstname, p.patronymic)) AS full_name
+            FROM public.teacher_biometrics tb
+            JOIN public.people p ON tb.teacher_id = p.mid
+            WHERE tb.embedding IS NOT NULL;
+        """
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(query)
+        except Exception as e:
+            print(f"[Биометрия] Ошибка чтения биометрии из базы данных: {e}")
+            return
+
+        new_teachers = []
+        new_encodings = []
+        new_names = []
+        new_ids = []
+
+        for r in rows:
+            raw_bytes = r["embedding"]
+            vec = None
+            if raw_bytes:
+                if len(raw_bytes) == 512:
+                    # 128 float32 чисел (нативный SFace)
+                    vec = np.frombuffer(raw_bytes, dtype=np.float32).copy()
+                elif len(raw_bytes) == 2048:
+                    # 512 float32 чисел (ArcFace / InsightFace)
+                    p_name = r.get("photo_path")
+                    if p_name:
+                        p_file = os.path.join(PHOTOS_DIR, p_name)
+                        if os.path.exists(p_file):
+                            p_img = cv2.imread(p_file)
+                            if p_img is not None:
+                                e_bytes, _ = self.compute_embedding_from_image(p_img)
+                                vec = np.frombuffer(e_bytes, dtype=np.float32).copy()
+                    if vec is None:
+                        vec = np.frombuffer(raw_bytes[:512], dtype=np.float32).copy()
+                elif len(raw_bytes) > 0:
+                    vec = np.frombuffer(raw_bytes[:512], dtype=np.float32).copy()
+            elif r.get("photo_path"):
+                p_file = os.path.join(PHOTOS_DIR, r["photo_path"])
+                if os.path.exists(p_file):
+                    p_img = cv2.imread(p_file)
+                    if p_img is not None:
+                        e_bytes, _ = self.compute_embedding_from_image(p_img)
+                        vec = np.frombuffer(e_bytes, dtype=np.float32).copy()
+
+            if vec is not None:
+                norm = np.linalg.norm(vec)
+                if norm > 1e-6:
+                    vec = vec / norm
+                t_id = r["teacher_id"]
+                t_name = r["full_name"] or f"Преподаватель #{t_id}"
+                new_teachers.append({
+                    "teacher_id": t_id,
+                    "full_name": t_name,
+                    "photo_path": r.get("photo_path"),
+                    "vector": vec,
+                })
+                new_encodings.append(vec)
+                new_names.append(t_name)
+                new_ids.append(t_id)
+
+        with self.inference_lock:
+            self.known_teachers = new_teachers
+            self.known_face_encodings = new_encodings
+            self.known_face_names = new_names
+            self.known_teacher_ids = new_ids
+        self._save_cache()
+
+        print(f"[Биометрия] Успешно загружено {len(new_teachers)} биометрических профилей преподавателей из БД.")
 
     def set_log_callback(self, cb: Callable[[int, float], Any]):
         self.log_callback = cb
@@ -261,6 +524,9 @@ class FaceRecognitionCamera:
                 })
         with self._teachers_lock:
             self.known_teachers = loaded
+            self.known_face_encodings = [t["vector"] for t in loaded]
+            self.known_face_names = [t["full_name"] for t in loaded]
+            self.known_teacher_ids = [t["teacher_id"] for t in loaded]
         print(f"[База биометрии] Загружено {len(loaded)} эталонов преподавателей.")
 
     def compute_embedding_from_image(self, img_bgr: np.ndarray) -> Tuple[bytes, Tuple[int, int, int, int]]:
@@ -291,26 +557,15 @@ class FaceRecognitionCamera:
             return False, "Лицо не обнаружено в кадре камеры. Пожалуйста, сядьте прямо перед камерой при хорошем освещении и повторите попытку.", None, None
 
         vec = vec / norm
-        photo_filename = f"teacher_{teacher_id}.jpg"
-        photo_path = os.path.join(PHOTOS_DIR, photo_filename)
+        safe_name = (full_name or f"Преподаватель #{teacher_id}").replace("/", "_").replace("\\", "_")
+        photo_filename = f"{teacher_id}__{safe_name}.jpg"
+        photo_path = os.path.join(self.path_images, photo_filename)
         cv2.imwrite(photo_path, raw, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        with self._teachers_lock:
-            found = False
-            for item in self.known_teachers:
-                if item["teacher_id"] == teacher_id:
-                    item["vector"] = vec
-                    item["photo_path"] = photo_filename
-                    if full_name:
-                        item["full_name"] = full_name
-                    found = True
-                    break
-            if not found:
-                self.known_teachers.append({
-                    "teacher_id": teacher_id,
-                    "full_name": full_name or f"Преподаватель #{teacher_id}",
-                    "photo_path": photo_filename,
-                    "vector": vec,
-                })
+
+        legacy_path = os.path.join(PHOTOS_DIR, f"teacher_{teacher_id}.jpg")
+        cv2.imwrite(legacy_path, raw, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+        self.add_single_face(photo_path, teacher_id, full_name or f"Преподаватель #{teacher_id}")
 
         return True, f"Снимок преподавателя #{teacher_id} успешно сохранен", emb_bytes, photo_filename
 
@@ -348,7 +603,13 @@ class FaceRecognitionCamera:
                         c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     except Exception:
                         pass
-                    return c
+                    # Важно: проверяем реальное чтение кадра (на macOS пустые устройства могут быть isOpened=True)
+                    ret, test_frame = c.read()
+                    if ret and test_frame is not None and test_frame.size > 0:
+                        return c
+                    else:
+                        logger.warning(f"Камера #{idx} открыта, но не отдает кадры (ret={ret})")
+                        c.release()
             except Exception as e:
                 logger.warning(f"Ошибка при открытии камеры #{idx}: {e}")
             return None
@@ -356,21 +617,17 @@ class FaceRecognitionCamera:
         logger.info(f"Попытка открыть камеру #{source_idx}...")
         cap = try_open(source_idx)
 
-        # Fallback на соседний индекс (0 <-> 1)
+        # Fallback по другим доступным индексам [0, 1, 2]
         if not cap:
-            alt_idx = 1 if source_idx == 0 else 0
-            logger.info(f"Камера #{source_idx} недоступна. Fallback на #{alt_idx}...")
-            cap = try_open(alt_idx)
-            if cap:
-                self.video_source = str(alt_idx)
-                self.camera_source = str(alt_idx)
-
-        # Если не открылась, проверяем индекс 2
-        if not cap:
-            cap = try_open(2)
-            if cap:
-                self.video_source = "2"
-                self.camera_source = "2"
+            candidates = [i for i in [0, 1, 2] if i != source_idx]
+            for alt_idx in candidates:
+                logger.info(f"Камера #{source_idx} не отдает кадры. Пробуем #{alt_idx}...")
+                cap = try_open(alt_idx)
+                if cap:
+                    self.video_source = str(alt_idx)
+                    self.camera_source = str(alt_idx)
+                    logger.info(f"Успешно переключено на камеру #{alt_idx}")
+                    break
 
         if cap and cap.isOpened():
             try:
@@ -482,6 +739,7 @@ class FaceRecognitionCamera:
     def _capture_loop(self):
         self.cap = self._open_camera()
         reconnect_timer = time.time()
+        failed_reads = 0
 
         while self._running:
             frame = None
@@ -489,10 +747,21 @@ class FaceRecognitionCamera:
                 ret, frame = self.cap.read()
                 if not ret or frame is None or frame.size == 0:
                     frame = None
-                elif self.flip_horizontal:
-                    frame = cv2.flip(frame, 1)
+                    failed_reads += 1
+                    if failed_reads >= 15:
+                        logger.warning(f"Камера #{self.camera_source} перестала отдавать кадры ({failed_reads} ошибок подряд). Переинициализация...")
+                        try:
+                            self.cap.release()
+                        except Exception:
+                            pass
+                        self.cap = None
+                        failed_reads = 0
+                else:
+                    failed_reads = 0
+                    if self.flip_horizontal:
+                        frame = cv2.flip(frame, 1)
             else:
-                if time.time() - reconnect_timer > 5.0:
+                if time.time() - reconnect_timer > 3.0:
                     reconnect_timer = time.time()
                     self.cap = self._open_camera()
 
@@ -555,8 +824,10 @@ class FaceRecognitionCamera:
             max_sim = 0.0
 
             if results:
-                with self._teachers_lock:
-                    candidates = list(self.known_teachers)
+                with self.inference_lock:
+                    known_encs = list(self.known_face_encodings)
+                    known_nms = list(self.known_face_names)
+                    known_ids = list(self.known_teacher_ids)
 
                 best_sim = 0.0
                 best_id = None
@@ -569,13 +840,16 @@ class FaceRecognitionCamera:
                     matched_id = None
                     matched_name = None
 
-                    for teacher in candidates:
-                        sim = float(np.dot(teacher["vector"].flatten(), face_emb.flatten()))
-                        if sim > face_max_sim:
-                            face_max_sim = sim
-                            if sim >= self.recognition_threshold:
-                                matched_id = teacher["teacher_id"]
-                                matched_name = teacher["full_name"]
+                    if len(known_encs) > 0:
+                        sims = [float(np.dot(enc.flatten(), face_emb.flatten())) for enc in known_encs]
+                        best_idx = int(np.argmax(sims))
+                        max_val = sims[best_idx]
+                        if max_val >= self.recognition_threshold:
+                            face_max_sim = max_val
+                            matched_id = known_ids[best_idx]
+                            matched_name = known_nms[best_idx]
+                        else:
+                            face_max_sim = max_val
 
                     x, y, bw, bh = bbox
                     if matched_id:

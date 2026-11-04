@@ -19,6 +19,7 @@ from .repositories.kiosk import KioskRepository
 async def lifespan(app: FastAPI):
     # Действия при старте
     await init_db_pool()
+    app.state.db_pool = pool
 
     # Инициализация сервиса распознавания лиц
     loop = asyncio.get_running_loop()
@@ -27,8 +28,9 @@ async def lifespan(app: FastAPI):
     def db_log_callback(teacher_id: int, confidence: float):
         async def _log():
             try:
-                if pool:
-                    async with pool.acquire() as conn:
+                active_pool = getattr(app.state, "db_pool", pool)
+                if active_pool:
+                    async with active_pool.acquire() as conn:
                         repo = KioskRepository(conn)
                         await repo.log_recognition(teacher_id, confidence)
             except Exception as e:
@@ -38,18 +40,22 @@ async def lifespan(app: FastAPI):
     face_recognition_service.set_log_callback(db_log_callback)
 
     try:
-        if pool:
-            async with pool.acquire() as conn:
+        active_pool = getattr(app.state, "db_pool", pool)
+        if active_pool:
+            # Если дисковый кэш был пуст, выполняем синхронизацию из PostgreSQL
+            if len(face_recognition_service.known_face_encodings) == 0:
+                await face_recognition_service.load_biometrics_from_db(active_pool)
+
+            # 2. Загрузка параметров табло и запуск камеры
+            async with active_pool.acquire() as conn:
                 repo = KioskRepository(conn)
                 settings_dict = await repo.get_settings()
-                embs = await repo.get_all_embeddings()
-                face_recognition_service.reload_embeddings(embs)
                 face_recognition_service.start(
                     camera_source=str(settings_dict.get("camera_source", "0")),
                     threshold=float(settings_dict.get("recognition_threshold", 0.32)),
                     idle_timeout=int(settings_dict.get("idle_timeout", 6)),
                     is_active=bool(settings_dict.get("is_active", True)),
-                    flip_horizontal=bool(settings_dict.get("camera_flip", False)),
+                    flip_horizontal=bool(settings_dict.get("camera_flip", True)),
                 )
     except Exception as e:
         print(f"Ошибка запуска видеоаналитики киоска: {e}")
