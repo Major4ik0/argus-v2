@@ -85,7 +85,7 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
-# Монтирование статики React для оффлайн Docker-образа
+# Монтирование статики React для офлайн Docker-образа
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static_dist")
 
 

@@ -45,3 +45,31 @@ def extract_pair_number(short_time: Optional[str]) -> Optional[int]:
         return None
     match = re.search(r'\d+', str(short_time))
     return int(match.group(0)) if match else None
+
+
+def resolve_faculty(fac_str: Optional[str], db_color: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Сопоставление названия факультета и цвета из БД или канонической палитры:
+    АСУ, РЭС (#FFAAFF), ПиПК (#FFFF00), СФ (#AAFF00), ВВОТП (#95E7FF).
+    """
+    if not fac_str:
+        return "АСУ, РЭС", (db_color if db_color else "#FFAAFF")
+    s = fac_str.upper()
+    if "АСУ" in s or "РЭС" in s:
+        name = "АСУ, РЭС"
+        default_c = "#FFAAFF"
+    elif "ПИПК" in s or "ППК" in s:
+        name = "ПиПК"
+        default_c = "#FFFF00"
+    elif "СФ" in s:
+        name = "СФ"
+        default_c = "#AAFF00"
+    elif "ВВОТП" in s or "ВВ" in s:
+        name = "ВВОТП"
+        default_c = "#95E7FF"
+    else:
+        name = fac_str
+        default_c = "#FFAAFF"
+
+    color = db_color if (db_color and db_color.strip()) else default_c
+    return name, color

@@ -486,7 +486,7 @@ export const WorkloadModal: React.FC<WorkloadModalProps> = ({ isOpen, onClose })
                     </div>
                   </div>
 
-                  {/* Прогресс-бар загрузки и кнопка «👁 Детали» */}
+                  {/* Прогресс-бар загрузки и кнопка Детали */}
                   <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-2.5">
                     <div>
                       <div className="flex items-center justify-between text-[11px] mb-1">
@@ -509,7 +509,7 @@ export const WorkloadModal: React.FC<WorkloadModalProps> = ({ isOpen, onClose })
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition group/btn"
                     >
                       <Eye className="w-3.5 h-3.5 text-sky-400 group-hover/btn:scale-110 transition-transform" />
-                      <span>👁 Детали нагрузки</span>
+                      <span>Детали нагрузки</span>
                     </button>
                   </div>
                 </div>

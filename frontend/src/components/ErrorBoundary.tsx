@@ -1,4 +1,5 @@
 import React from 'react'
+import { AlertTriangle } from 'lucide-react'
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
@@ -36,7 +37,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
           <div className="max-w-lg w-full bg-slate-900 border border-rose-500/40 rounded-2xl p-8 shadow-2xl text-center space-y-4">
-            <div className="text-4xl">⚠️</div>
+            <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto" />
             <h1 className="text-lg font-bold text-rose-400">Что-то пошло не так</h1>
             <p className="text-sm text-slate-400">
               Произошла непредвиденная ошибка при рендере интерфейса.

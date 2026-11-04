@@ -251,7 +251,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               {/* Карточки KPI итогов */}
               <div className="grid grid-cols-3 gap-2.5 pt-1 text-center">
                 <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30">
-                  <div className="text-[11px] font-medium text-emerald-400/80">🟢 Успешно добавлено</div>
+                  <div className="text-[11px] font-medium text-emerald-400/80 flex items-center justify-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>Успешно добавлено</span>
+                  </div>
                   <div className="text-xl font-bold text-emerald-300 font-mono mt-0.5">
                     +{totalInserted} <span className="text-xs font-normal">пар</span>
                   </div>
@@ -263,15 +266,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                  <div className="text-[11px] font-medium text-slate-400">⚪ Пропущено / Дубликаты</div>
+                  <div className="text-[11px] font-medium text-slate-400 flex items-center justify-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    <span>Пропущено / Дубликаты</span>
+                  </div>
                   <div className="text-xl font-bold text-slate-300 font-mono mt-0.5">
                     {totalSkipped} <span className="text-xs font-normal">строк</span>
                   </div>
                 </div>
 
                 <div className={`p-3 rounded-xl border ${totalFailed > 0 ? 'bg-rose-950/40 border-rose-500/30' : 'bg-slate-900 border-slate-800'}`}>
-                  <div className={`text-[11px] font-medium ${totalFailed > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                    🔴 Ошибок / Не найдено
+                  <div className={`text-[11px] font-medium flex items-center justify-center gap-1.5 ${totalFailed > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                    <span className={`w-2 h-2 rounded-full ${totalFailed > 0 ? 'bg-rose-500' : 'bg-slate-500'}`} />
+                    <span>Ошибок / Не найдено</span>
                   </div>
                   <div className={`text-xl font-bold font-mono mt-0.5 ${totalFailed > 0 ? 'text-rose-300' : 'text-slate-400'}`}>
                     {totalFailed}

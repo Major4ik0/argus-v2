@@ -76,6 +76,13 @@ async def init_faculty_colors_table(conn: asyncpg.Connection):
         );
     """)
 
+    try:
+        await conn.execute("""
+            ALTER TABLE public.fuculty ADD COLUMN IF NOT EXISTS color VARCHAR(32);
+        """)
+    except Exception:
+        pass
+
     # Проверяем, есть ли уже записи
     count = await conn.fetchval("SELECT COUNT(*) FROM public.faculty_colors;")
     if count == 0:
@@ -84,6 +91,10 @@ async def init_faculty_colors_table(conn: asyncpg.Connection):
                 "INSERT INTO public.faculty_colors (idfaculty, color) VALUES ($1, $2) ON CONFLICT DO NOTHING;",
                 f_id, col
             )
+            try:
+                await conn.execute("UPDATE public.fuculty SET color = $1 WHERE idfaculty = $2 AND color IS NULL;", col, f_id)
+            except Exception:
+                pass
 
 class FacultyColorItem(BaseModel):
     idfaculty: int
@@ -135,6 +146,14 @@ async def update_faculty_color(
         DO UPDATE SET color = EXCLUDED.color;
     """
     await conn.execute(sql, idfaculty, payload.color)
+
+    try:
+        await conn.execute("""
+            UPDATE public.fuculty SET color = $1 WHERE idfaculty = $2;
+        """, payload.color, idfaculty)
+    except Exception:
+        pass
+
     return {"success": True, "idfaculty": idfaculty, "color": payload.color}
 
 

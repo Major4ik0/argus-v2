@@ -8,3 +8,5 @@ __pycache__/
 *.so
 frontend/node_modules/
 frontend/dist/
+/legacy_qt
+backend/uploads/

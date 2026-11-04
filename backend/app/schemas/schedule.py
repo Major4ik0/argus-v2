@@ -24,6 +24,7 @@ class ScheduleItemResponse(BaseModel):
     group_name: Optional[str] = None
     faculty_id: Optional[int] = None
     faculty_short_name: Optional[str] = None
+    faculty_color: Optional[str] = None
     course_id: int
     course_alias: Optional[str] = None
     course_title: Optional[str] = None

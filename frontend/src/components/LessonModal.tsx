@@ -923,7 +923,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="🔍 Поиск дисциплины..."
+                  placeholder="Поиск дисциплины..."
                   value={
                     isCourseDropdownOpen
                       ? courseSearch
@@ -1244,7 +1244,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                       : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
                                   }`}
                                 >
-                                  {isAdded ? '✓ Выбран' : 'Назначить'}
+                                  {isAdded ? 'Выбран' : 'Назначить'}
                                 </button>
                               </div>
                             </div>
@@ -1256,7 +1256,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                   rec.is_free ? 'text-emerald-400' : 'text-rose-400'
                                 }`}
                               >
-                                {rec.is_free ? '✓ Свободен в этот слот' : '⚠ Занят в этот слот'}
+                                {rec.is_free ? 'Свободен в этот слот' : 'Занят в этот слот'}
                               </span>
                               {rec.reason && (
                                 <span className="text-slate-400 italic truncate max-w-[70%] text-right">
@@ -1362,7 +1362,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                     : 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm'
                                 }`}
                               >
-                                {isAdded ? '✓ Выбран' : 'Назначить'}
+                                {isAdded ? 'Выбран' : 'Назначить'}
                               </button>
                             </div>
                           </div>
@@ -1375,7 +1375,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                   rec.is_free ? 'text-emerald-400' : 'text-rose-400'
                                 }`}
                               >
-                                {rec.is_free ? '✓ Свободен в этот слот' : '⚠ Занят в этот слот'}
+                                {rec.is_free ? 'Свободен в этот слот' : 'Занят в этот слот'}
                               </span>
                               {rec.reason && (
                                 <span className="text-slate-400 italic truncate max-w-[70%] text-right">
@@ -1463,7 +1463,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             <div className="relative" ref={teacherWrapRef}>
               <input
                 type="text"
-                placeholder="🔍 Поиск преподавателя..."
+                placeholder="Поиск преподавателя..."
                 value={teacherSearch}
                 onFocus={() => setIsTeacherDropdownOpen(true)}
                 onChange={(e) => {
@@ -1567,7 +1567,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-950/40 border border-slate-800/60 min-h-[38px]">
               {selectedRoomIds.length === 0 ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-sky-950/40 text-sky-400 border border-sky-800/50 italic">
-                  🏫 -- (по умолчанию)
+                  -- (по умолчанию)
                 </span>
               ) : (
                 selectedRoomIds.map((id) => {
@@ -1578,7 +1578,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                       key={id}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-800/90 text-slate-200 border border-slate-700 shadow-sm"
                     >
-                      <span>🏫 {name}</span>
+                      <span>{name}</span>
                       <button
                         type="button"
                         onClick={() => handleRemoveRoom(id)}
@@ -1596,7 +1596,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             <div className="relative" ref={roomWrapRef}>
               <input
                 type="text"
-                placeholder="🔍 Поиск аудитории..."
+                placeholder="Поиск аудитории..."
                 value={roomSearch}
                 onFocus={() => setIsRoomDropdownOpen(true)}
                 onChange={(e) => {
@@ -1634,7 +1634,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                             readOnly
                             className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-0"
                           />
-                          <span className="flex-1 truncate font-medium">🏫 {rName}</span>
+                          <span className="flex-1 truncate font-medium">{rName}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                             {building}
                           </span>
@@ -1703,7 +1703,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                         key={badge.streamName}
                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-sky-600/25 border border-sky-400/50 text-sky-200 text-xs font-semibold shadow-sm"
                       >
-                        <span className="text-sky-300">🎓 Сформирован {badge.streamName}</span>
+                        <span className="text-sky-300">Сформирован {badge.streamName}</span>
                         <span className="text-[10px] text-sky-400/80 font-normal">
                           ({badge.groups.join(', ')})
                         </span>
@@ -1721,7 +1721,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                         key={id}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-800/90 text-slate-200 border border-slate-700 shadow-sm"
                       >
-                        <span>👥 {name}</span>
+                        <span>{name}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveGroup(id)}
@@ -1740,7 +1740,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             <div className="relative" ref={groupWrapRef}>
               <input
                 type="text"
-                placeholder="🔍 Поиск группы..."
+                placeholder="Поиск группы..."
                 value={groupSearch}
                 onFocus={() => setIsGroupDropdownOpen(true)}
                 onChange={(e) => {
@@ -1776,7 +1776,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                             readOnly
                             className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-0"
                           />
-                          <span className="flex-1 truncate font-medium">👥 {g.name || g.group_name}</span>
+                          <span className="flex-1 truncate font-medium">{g.name || g.group_name}</span>
                           {faculty && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                               {faculty.short_name || faculty.name}

@@ -5,6 +5,8 @@ from datetime import date, timedelta
 import calendar
 import asyncpg
 
+from ..core.calendar_utils import resolve_faculty
+
 
 class ScheduleRepository:
     def __init__(self, conn: asyncpg.Connection):
@@ -23,6 +25,10 @@ class ScheduleRepository:
                 data[field] = []
         data["teacher_mid"] = list(data.get("teacher_mid") or [])
         data["room_ids"] = list(data.get("room_ids") or [])
+        if "faculty_short_name" in data or "faculty_color" in data:
+            fac_name, fac_color = resolve_faculty(data.get("faculty_short_name"), data.get("faculty_color"))
+            data["faculty_short_name"] = fac_name
+            data["faculty_color"] = fac_color
         return data
 
     async def get_study_year_id_by_date(self, target_date: date) -> Optional[int]:
@@ -277,6 +283,7 @@ class ScheduleRepository:
                 g.name AS group_name,
                 g.idfaculty AS faculty_id,
                 f."shortName" AS faculty_short_name,
+                COALESCE(fc.color, f.color, '') AS faculty_color,
                 nnz_s.cid AS course_id,
                 crs.alias AS course_alias,
                 crs.title AS course_title,
@@ -309,6 +316,7 @@ class ScheduleRepository:
             LEFT JOIN eventtools AS e ON nnz_s.pair_type_id = e.typeid
             LEFT JOIN groupname AS g ON nnz_s.gid = g.gid
             LEFT JOIN fuculty AS f ON f.idfaculty = g.idfaculty
+            LEFT JOIN faculty_colors AS fc ON fc.idfaculty = f.idfaculty
             LEFT JOIN periods AS pr ON nnz_s.period = pr.lid 
             LEFT JOIN nnz_schedule_variants AS nsv ON nsv.sh_var_id = nnz_s.sh_var_id
             {where_clause}
@@ -330,6 +338,7 @@ class ScheduleRepository:
                 g.name AS group_name,
                 g.idfaculty AS faculty_id,
                 f."shortName" AS faculty_short_name,
+                COALESCE(fc.color, f.color, '') AS faculty_color,
                 nnz_s.cid AS course_id,
                 crs.alias AS course_alias,
                 crs.title AS course_title,
@@ -362,6 +371,7 @@ class ScheduleRepository:
             LEFT JOIN eventtools AS e ON nnz_s.pair_type_id = e.typeid
             LEFT JOIN groupname AS g ON nnz_s.gid = g.gid
             LEFT JOIN fuculty AS f ON f.idfaculty = g.idfaculty
+            LEFT JOIN faculty_colors AS fc ON fc.idfaculty = f.idfaculty
             LEFT JOIN periods AS pr ON nnz_s.period = pr.lid 
             LEFT JOIN nnz_schedule_variants AS nsv ON nsv.sh_var_id = nnz_s.sh_var_id
             WHERE nnz_s.sheid = $1;
@@ -685,6 +695,8 @@ class ScheduleRepository:
             e.alias AS event_type,
             g_main.name AS group_name,
             g_main.idfaculty AS faculty_id,
+            COALESCE(f."shortName", f.faculty, '') AS faculty_short_name,
+            COALESCE(fc.color, f.color, '') AS faculty_color,
             nnz_s.sheid AS schedule_id,
             nnz_s.sheid,
             nnz_s.day_of_week,
@@ -713,6 +725,8 @@ class ScheduleRepository:
         LEFT JOIN public.rooms r_main ON r_main.rid = nnz_s.rid[1]
         JOIN public.eventtools e ON nnz_s.pair_type_id = e.typeid
         JOIN public.groupname g_main ON nnz_s.gid = g_main.gid
+        LEFT JOIN public.fuculty f ON f.idfaculty = g_main.idfaculty
+        LEFT JOIN public.faculty_colors fc ON fc.idfaculty = f.idfaculty
         JOIN public.periods pr ON nnz_s.period = pr.lid
         LEFT JOIN schedule_with_teachers swt ON swt.sheid = nnz_s.sheid
         LEFT JOIN schedule_with_rooms swr ON swr.sheid = nnz_s.sheid
@@ -750,6 +764,9 @@ class ScheduleRepository:
             d["course_name"] = d["subject_name"]
             # Аудитория для отображения
             d["classroom"] = d.get("room_name") or "--"
+            fac_name, fac_color = resolve_faculty(d.get("faculty_short_name"), d.get("faculty_color"))
+            d["faculty_short_name"] = fac_name
+            d["faculty_color"] = fac_color
             result.append(d)
 
         return result

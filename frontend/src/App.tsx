@@ -41,6 +41,7 @@ import {
   Printer,
   Tv,
   Camera,
+  GraduationCap,
 } from 'lucide-react'
 
 const MONTH_NAMES = [
@@ -1338,6 +1339,39 @@ export function App() {
               </table>
             )}
           </div>
+
+          {/* Нижняя панель с легендой факультетов */}
+          <div className="h-10 bg-slate-900/95 border-t border-slate-800 px-4 flex items-center justify-between shrink-0 text-xs text-slate-300">
+            <div className="flex items-center gap-3">
+              <span className="font-extrabold uppercase tracking-wider text-[11px] text-slate-400 flex items-center gap-1.5">
+                <GraduationCap className="w-3.5 h-3.5 text-sky-400" />
+                Факультеты:
+              </span>
+              <div className="flex items-center gap-3 flex-wrap">
+                {facultiesList.map((fac) => (
+                  <div key={fac.idfaculty} className="flex items-center gap-1.5">
+                    <span
+                      className="w-3.5 h-3.5 rounded shadow-sm shrink-0 border border-slate-950/60"
+                      style={{ backgroundColor: fac.color }}
+                    />
+                    <span className="font-medium text-slate-200 text-[11px]">{fac.short_name || fac.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsColorsModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 text-[11px] font-semibold transition"
+                title="Настроить цветовую схему факультетов"
+              >
+                <Palette className="w-3.5 h-3.5" />
+                <span>Палитра факультетов</span>
+              </button>
+            )}
+          </div>
         </main>
       </div>
 
@@ -1346,7 +1380,10 @@ export function App() {
         isOpen={isColorsModalOpen}
         onClose={() => setIsColorsModalOpen(false)}
         faculties={facultiesList}
-        onColorsUpdated={loadFacultyColors}
+        onColorsUpdated={() => {
+          loadFacultyColors()
+          loadSchedule()
+        }}
       />
 
       <AdminManagementModal

@@ -30,6 +30,9 @@ export interface GroupItem {
   group_name?: string
   faculty_id?: number
   idfaculty?: number
+  faculty_name?: string
+  faculty_short_name?: string
+  faculty_color?: string
 }
 
 export interface AuditoryItem {
@@ -85,6 +88,9 @@ export interface ScheduleEvent {
   auditory?: string
   faculty_id?: number
   idfaculty?: number
+  faculty_name?: string
+  faculty_short_name?: string
+  faculty_color?: string
   day_of_week?: number
   lesson_num?: number
   sh_var_id?: number

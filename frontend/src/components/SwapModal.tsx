@@ -658,15 +658,15 @@ export const SwapModal: React.FC<SwapModalProps> = ({
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 {rec.same_group_count > 0 ? (
                                   <span className="px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-                                    ✓ С группой ({rec.same_group_count})
+                                    С группой ({rec.same_group_count})
                                   </span>
                                 ) : rec.total_count > 0 ? (
                                   <span className="px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-500/30">
-                                    📚 Дисциплина ({rec.total_count})
+                                    Дисциплина ({rec.total_count})
                                   </span>
                                 ) : (
                                   <span className="px-1.5 py-0.2 rounded-md text-[9px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
-                                    🆕 Новый
+                                    Новый
                                   </span>
                                 )}
 
@@ -687,7 +687,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
                               {Math.round(score)}%
                             </span>
                             <span className="text-[10px] text-sky-400 font-medium hover:underline">
-                              {isSelected ? '✓ Выбран' : 'Выбрать →'}
+                              {isSelected ? 'Выбран' : 'Выбрать →'}
                             </span>
                           </div>
                         </div>

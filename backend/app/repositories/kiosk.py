@@ -4,23 +4,7 @@ from datetime import datetime, timedelta, date as dt_date
 from typing import List, Dict, Any, Optional, Tuple
 import asyncpg
 
-from ..core.calendar_utils import format_period_time, extract_pair_number, get_academic_year_info
-
-
-def resolve_faculty(fac_str: Optional[str]) -> Tuple[str, str]:
-    """Сопоставление названия факультета и канонического цвета по organaizer.ui."""
-    if not fac_str:
-        return "АСУ, РЭС", "#FFAAFF"
-    s = fac_str.upper()
-    if "АСУ" in s or "РЭС" in s:
-        return "АСУ, РЭС", "#FFAAFF"
-    if "ПИПК" in s or "ППК" in s:
-        return "ПиПК", "#FFFF00"
-    if "СФ" in s:
-        return "СФ", "#AAFF00"
-    if "ВВОТП" in s or "ВВ" in s:
-        return "ВВОТП", "#95E7FF"
-    return fac_str, "#FFAAFF"
+from ..core.calendar_utils import format_period_time, extract_pair_number, get_academic_year_info, resolve_faculty
 
 
 class KioskRepository:
@@ -400,12 +384,14 @@ class KioskRepository:
                 et.alias AS lesson_type,
                 gn.name AS group_name,
                 rm.short_name AS room_name,
-                COALESCE(f."shortName", f.faculty, '') AS faculty_short
+                COALESCE(f."shortName", f.faculty, '') AS faculty_short,
+                COALESCE(fc.color, f.color, '') AS db_faculty_color
             FROM public.nnz_schedule ns
             LEFT JOIN public.courses c ON ns.cid = c.cid
             LEFT JOIN public.eventtools et ON ns.pair_type_id = et.typeid
             LEFT JOIN public.groupname gn ON ns.gid = gn.gid
             LEFT JOIN public.fuculty f ON gn.idfaculty = f.idfaculty
+            LEFT JOIN public.faculty_colors fc ON f.idfaculty = fc.idfaculty
             LEFT JOIN public.rooms rm ON rm.rid = ns.rid[1]
             WHERE ns.sh_var_id = $1
               AND ns.day_of_week BETWEEN 1 AND 6
@@ -421,7 +407,7 @@ class KioskRepository:
             dow = r["day_of_week"]
             p_meta = periods_map.get(r["period"], {"pair_number": 1, "time_range": "09:00 - 10:35"})
             day_date = monday + timedelta(days=dow - 1)
-            fac_name, fac_color = resolve_faculty(r["faculty_short"])
+            fac_name, fac_color = resolve_faculty(r["faculty_short"], r["db_faculty_color"])
 
             lessons.append({
                 "sheid": r["sheid"],
@@ -494,12 +480,28 @@ class KioskRepository:
 
         day_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
-        # Легенда факультетов по organaizer.ui
+        # Легенда факультетов из базы данных
+        fac_sql = """
+            SELECT 
+                f.idfaculty,
+                COALESCE(f."shortName", f.faculty, '') AS short_name,
+                COALESCE(fc.color, f.color, '') AS color
+            FROM public.fuculty f
+            LEFT JOIN public.faculty_colors fc ON f.idfaculty = fc.idfaculty
+            ORDER BY f.idfaculty;
+        """
+        fac_db_rows = await self.conn.fetch(fac_sql)
+        fac_colors_lookup = {}
+        for frow in fac_db_rows:
+            s_name = (frow["short_name"] or "").strip().upper()
+            if s_name and frow["color"]:
+                fac_colors_lookup[s_name] = frow["color"]
+
         faculties = [
-            {"name": "АСУ, РЭС", "color": "#FFAAFF"},
-            {"name": "ПиПК", "color": "#FFFF00"},
-            {"name": "СФ", "color": "#AAFF00"},
-            {"name": "ВВОТП", "color": "#95E7FF"},
+            {"name": "АСУ, РЭС", "color": fac_colors_lookup.get("АСУ") or fac_colors_lookup.get("РЭС") or "#FFAAFF"},
+            {"name": "ПиПК", "color": fac_colors_lookup.get("ПИПК") or fac_colors_lookup.get("ППК") or "#FFFF00"},
+            {"name": "СФ", "color": fac_colors_lookup.get("СФ") or "#AAFF00"},
+            {"name": "ВВОТП", "color": fac_colors_lookup.get("ВВОТП") or fac_colors_lookup.get("ВВ") or "#95E7FF"},
         ]
 
         # 1. Список преподавателей кафедры (ПМК 1, 2)
@@ -536,12 +538,14 @@ class KioskRepository:
                 et.alias AS lesson_type,
                 gn.name AS group_name,
                 rm.short_name AS room_name,
-                COALESCE(f."shortName", f.faculty, '') AS faculty_short
+                COALESCE(f."shortName", f.faculty, '') AS faculty_short,
+                COALESCE(fc.color, f.color, '') AS db_faculty_color
             FROM public.nnz_schedule ns
             LEFT JOIN public.courses c ON ns.cid = c.cid
             LEFT JOIN public.eventtools et ON ns.pair_type_id = et.typeid
             LEFT JOIN public.groupname gn ON ns.gid = gn.gid
             LEFT JOIN public.fuculty f ON gn.idfaculty = f.idfaculty
+            LEFT JOIN public.faculty_colors fc ON f.idfaculty = fc.idfaculty
             LEFT JOIN public.rooms rm ON rm.rid = ns.rid[1]
             WHERE ns.sh_var_id = $1
               AND ns.day_of_week BETWEEN 1 AND 6
@@ -556,7 +560,7 @@ class KioskRepository:
                 continue
             day_date = monday + timedelta(days=dow - 1)
             p_meta = periods_map.get(r["period"], {"pair_number": 1, "time_range": "09:00 - 10:35"})
-            fac_name, fac_color = resolve_faculty(r["faculty_short"])
+            fac_name, fac_color = resolve_faculty(r["faculty_short"], r["db_faculty_color"])
             p_num = p_meta["pair_number"]
             pair_name = f"{p_num * 2 - 1}-{p_num * 2}"
 

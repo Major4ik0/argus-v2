@@ -34,7 +34,6 @@ COPY backend/ /app/backend/
 COPY --from=frontend-builder /app/frontend/dist /app/backend/static_dist
 
 # Копирование офлайн-моделей InsightFace и legacy_qt
-COPY legacy_qt/ /app/legacy_qt/
 
 ENV PYTHONPATH=/app/backend
 EXPOSE 8000

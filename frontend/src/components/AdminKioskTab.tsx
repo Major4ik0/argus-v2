@@ -572,8 +572,8 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                             <Camera className="w-6 h-6 text-slate-600" />
                           )}
                           {t.has_photo && (
-                            <span className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-tl-lg flex items-center justify-center text-[10px] text-white font-bold">
-                              ✓
+                            <span className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-tl-lg flex items-center justify-center text-white">
+                              <Check className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>
