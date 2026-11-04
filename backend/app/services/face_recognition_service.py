@@ -23,6 +23,38 @@ os.makedirs(PHOTOS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 
+def is_valid_face_geometry(box, frame_w: int, frame_h: int) -> bool:
+    """
+    Геометрический фильтр пропорций лица (Aspect Ratio & Min Size).
+    Исключает надписи на одежде, складки ткани и артефакты геометрии.
+    Поддерживает координаты (x1, y1, x2, y2) и (x, y, w, h).
+    """
+    if box is None or len(box) < 4:
+        return False
+
+    b0, b1, b2, b3 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+    if b2 > b0 and b3 > b1:
+        x1, y1, x2, y2 = b0, b1, b2, b3
+        w = x2 - x1
+        h = y2 - y1
+    else:
+        x1, y1 = b0, b1
+        w, h = b2, b3
+
+    # 1. Минимальные и максимальные адекватные размеры лица в кадре
+    if w < 50 or h < 50:
+        return False
+    if w > frame_w * 0.9 or h > frame_h * 0.9:
+        return False
+
+    # 2. Проверка соотношения сторон (высота / ширина)
+    aspect_ratio = float(h) / float(w)
+    if not (0.75 <= aspect_ratio <= 1.40):
+        return False
+
+    return True
+
+
 class SCRFDFaceDetector:
     """
     Автономный детектор лиц SCRFD-10G (ONNX Runtime, CPU).
@@ -49,7 +81,7 @@ class SCRFDFaceDetector:
         except Exception as e:
             logger.warning(f"ONNX Runtime недоступен или ошибка инициализации SCRFD: {e}. Режим совместимости.")
 
-    def detect(self, img: np.ndarray, threshold: float = 0.5) -> List[Tuple[int, int, int, int]]:
+    def detect(self, img: np.ndarray, threshold: float = 0.55) -> List[Tuple[int, int, int, int]]:
         """
         Детекция лиц на кадре.
         Возвращает список прямоугольников (x, y, w, h).
@@ -99,7 +131,9 @@ class SCRFDFaceDetector:
                                 by = int(b[1] / scale)
                                 bw = int((b[2] - b[0]) / scale)
                                 bh = int((b[3] - b[1]) / scale)
-                                boxes.append((max(0, bx), max(0, by), max(10, bw), max(10, bh)))
+                                # Геометрический фильтр пропорций лица
+                                if is_valid_face_geometry((bx, by, bx + bw, by + bh), w, h):
+                                    boxes.append((max(0, bx), max(0, by), max(10, bw), max(10, bh)))
                 if boxes:
                     return boxes
             except Exception as e:
@@ -578,13 +612,15 @@ class FaceRecognitionService:
                 continue
 
             annotated_frame = raw_frame.copy()
-            boxes = self.detector.detect(raw_frame, threshold=0.45)
+            boxes = self.detector.detect(raw_frame, threshold=0.55)
 
             detected_cand_id = None
             detected_cand_name = None
             max_sim = 0.0
 
             if boxes:
+                # Сортировка по площади (w * h) - приоритет главного пользователя
+                boxes.sort(key=lambda b: b[2] * b[3], reverse=True)
                 x, y, bw, bh = boxes[0]
                 face_crop = raw_frame[max(0, y):min(raw_frame.shape[0], y + bh), max(0, x):min(raw_frame.shape[1], x + bw)]
 
@@ -603,12 +639,20 @@ class FaceRecognitionService:
                                 detected_cand_id = teacher["teacher_id"]
                                 detected_cand_name = teacher["full_name"]
 
-                # Отрисовка рамки на кадре мониторинга
-                color = (16, 185, 129) if detected_cand_id else (59, 130, 246) # Зеленый или Синий
-                label = f"{detected_cand_name} ({max_sim:.2f})" if detected_cand_id else f"Лицо обнаружено ({max_sim:.2f})"
-                cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
-                cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
-                cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                # Отрисовка рамки на кадре мониторинга согласно правилам калибровки
+                if detected_cand_id:
+                    color = (16, 185, 129)  # Зеленый BGR
+                    label = f"{detected_cand_name} ({max_sim:.2f})"
+                    cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
+                    cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
+                    cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                elif 0.15 <= max_sim < self.recognition_threshold:
+                    color = (11, 158, 245)  # Оранжевый BGR
+                    label = "Не опознан"
+                    cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
+                    cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
+                    cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                # Если max_sim < 0.15, рамку не отрисовываем (игнор принтов и шумов)
 
             # Логика дебаунсинга (подтверждение личности по 3 кадрам подряд)
             if detected_cand_id:

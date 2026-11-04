@@ -3,7 +3,6 @@ import axios from 'axios'
 import {
   Shield,
   Activity,
-  Palette,
   Camera,
   User,
   Trash2,
@@ -15,8 +14,6 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  Sun,
-  Moon,
   Users,
   Eye,
   EyeOff,
@@ -96,10 +93,8 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
   isOpen,
   onClose,
   currentUser,
-  siteTheme = 'light',
-  onSiteThemeChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'theming' | 'access' | 'kiosk' | 'database'>('monitoring')
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'access' | 'kiosk' | 'database'>('monitoring')
 
   // Вкладка: База данных
   const [dbConfig, setDbConfig] = useState<{
@@ -127,11 +122,6 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
   const [monitoring, setMonitoring] = useState<SystemMonitoringData | null>(null)
   const [monitoringLoading, setMonitoringLoading] = useState(false)
 
-  // Вкладка: Оформление (независимые темы)
-  const [currentSiteTheme, setCurrentSiteTheme] = useState<'light' | 'dark'>(siteTheme)
-  const [currentKioskTheme, setCurrentKioskTheme] = useState<'light' | 'dark'>('light')
-  const [themingSavedMsg, setThemingSavedMsg] = useState<string | null>(null)
-
   // Вкладка: Пользователи и права
   const [admins, setAdmins] = useState<AdminUserItem[]>([])
   const [newUsername, setNewUsername] = useState('')
@@ -155,19 +145,6 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
       console.error('Ошибка загрузки мониторинга:', err)
     } finally {
       setMonitoringLoading(false)
-    }
-  }
-
-  // Загрузка тем оформления
-  const loadTheming = async () => {
-    try {
-      const res = await axios.get<{ site_theme: 'light' | 'dark'; kiosk_theme: 'light' | 'dark' }>(
-        '/api/v1/admin/settings'
-      )
-      if (res.data.site_theme) setCurrentSiteTheme(res.data.site_theme)
-      if (res.data.kiosk_theme) setCurrentKioskTheme(res.data.kiosk_theme)
-    } catch {
-      // Игнорируем
     }
   }
 
@@ -268,30 +245,12 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadMonitoring()
-      loadTheming()
       loadAdmins()
       loadDbConfig()
       setAccessError(null)
       setAccessSuccess(null)
     }
   }, [isOpen])
-
-  // Сохранение независимых тем
-  const handleSaveTheming = async () => {
-    try {
-      await axios.post('/api/v1/admin/settings', {
-        site_theme: currentSiteTheme,
-        kiosk_theme: currentKioskTheme,
-      })
-      localStorage.setItem('site_theme', currentSiteTheme)
-      localStorage.setItem('kiosk_theme', currentKioskTheme)
-      if (onSiteThemeChange) onSiteThemeChange(currentSiteTheme)
-      setThemingSavedMsg('Настройки тем успешно сохранены')
-      setTimeout(() => setThemingSavedMsg(null), 3000)
-    } catch (err) {
-      console.error('Ошибка сохранения тем:', err)
-    }
-  }
 
   // Добавление пользователя с гранулярными правами
   const handleAddAdmin = async (e: React.FormEvent) => {
@@ -396,7 +355,7 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                Мониторинг сайта, управление правами и независимое оформление
+                Мониторинг сайта, управление правами и настройки киоска
               </div>
             </div>
           </div>
@@ -422,19 +381,6 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
           >
             <Activity className="w-3.5 h-3.5" />
             <span>Мониторинг системы</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('theming')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
-              activeTab === 'theming'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Palette className="w-3.5 h-3.5" />
-            <span>Оформление и темы</span>
           </button>
 
           <button
@@ -651,123 +597,7 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
             </div>
           )}
 
-          {/* ================= ВКЛАДКА 2: ОФОРМЛЕНИЕ И ТЕМЫ ================= */}
-          {activeTab === 'theming' && (
-            <div className="max-w-2xl mx-auto space-y-6 py-2">
-              <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-5 bg-slate-50/50 dark:bg-slate-950/40 space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <Palette className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                      Раздельное управление темами оформления
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Сайт и инфотабло могут работать в противоположных цветовых темах
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                  {/* Тема основного сайта */}
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Основной сайт
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-500">/</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Сетка расписания, левая панель, карточки пар и модальные окна
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCurrentSiteTheme('light')}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                          currentSiteTheme === 'light'
-                            ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm ring-2 ring-sky-400/20'
-                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Sun className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Светлая</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCurrentSiteTheme('dark')}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                          currentSiteTheme === 'dark'
-                            ? 'bg-slate-800 border-indigo-500 text-white shadow-sm ring-2 ring-indigo-500/20'
-                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Темная</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Тема инфотабло */}
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Инфотабло кафедры
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-500">/display</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Настенный терминал киоска с каруселью и распознаванием лиц
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCurrentKioskTheme('light')}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                          currentKioskTheme === 'light'
-                            ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm ring-2 ring-sky-400/20'
-                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Sun className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Светлая</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCurrentKioskTheme('dark')}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                          currentKioskTheme === 'dark'
-                            ? 'bg-slate-800 border-indigo-500 text-white shadow-sm ring-2 ring-indigo-500/20'
-                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Темная</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {themingSavedMsg && (
-                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{themingSavedMsg}</span>
-                  </div>
-                )}
-
-                <div className="pt-2 text-right">
-                  <button
-                    type="button"
-                    onClick={handleSaveTheming}
-                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition"
-                  >
-                    Применить и сохранить оформление
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= ВКЛАДКА 3: ПРАВА И ДОСТУП ================= */}
+          {/* ================= ВКЛАДКА 2: ПРАВА И ДОСТУП ================= */}
           {activeTab === 'access' && (
             <div className="space-y-4">
               {/* Форма добавления пользователя с чекбоксами прав */}

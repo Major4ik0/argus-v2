@@ -690,10 +690,10 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           )}
 
           {/* 1. ИНФОРМАЦИОННЫЙ ПАСПОРТ ЗАНЯТИЯ (.pair-info-card) */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-slate-950/80 via-slate-900/90 to-sky-950/20 border border-slate-800 shadow-inner">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-slate-50 via-sky-50/50 to-slate-100 dark:from-slate-950/80 dark:via-slate-900/90 dark:to-sky-950/20 border border-slate-200 dark:border-slate-800 shadow-inner">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Преподаватель
                 </span>
                 <div className="flex items-center gap-2">
@@ -703,27 +703,27 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                       backgroundColor: primaryTeacher ? getTeacherColor(primaryTeacher.id) : '#38bdf8',
                     }}
                   />
-                  <span className="text-xs font-semibold text-white truncate">
+                  <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                     {primaryTeacher ? primaryTeacher.full_name : 'Не назначен'}
                   </span>
                 </div>
               </div>
 
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Дата
                 </span>
-                <span className="text-xs font-semibold text-sky-400 font-mono">
+                <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 font-mono">
                   {date || '—'}
                 </span>
               </div>
 
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Пара / Время
                 </span>
-                <span className="text-xs font-semibold text-slate-200">
-                  {periodInfo.title} <span className="text-[11px] text-slate-400 font-normal">({periodInfo.time})</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  {periodInfo.title} <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">({periodInfo.time})</span>
                 </span>
               </div>
             </div>
@@ -732,27 +732,27 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           {/* 2. РУЧНЫЕ ПОЛЯ ДАТЫ И ПАРЫ */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-sky-400" />
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Дата</span>
               </label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-sky-500 font-mono transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white [color-scheme:light] dark:[color-scheme:dark] focus:outline-none focus:border-sky-500 font-mono transition"
                 required
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-sky-400" />
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Пара</span>
               </label>
               <select
                 value={periodId}
                 onChange={(e) => setPeriodId(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-sky-500 transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-sky-500 transition"
               >
                 <option value={1}>1-2 час (09:00 – 10:35)</option>
                 <option value={2}>3-4 час (10:50 – 12:25)</option>
@@ -765,14 +765,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           {/* 3. ТИП И НОМЕР ЗАНЯТИЯ */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Тип занятия</span>
               </label>
               <select
                 value={typeId}
                 onChange={(e) => setTypeId(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-sky-500 transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-sky-500 transition"
               >
                 {(refs?.lesson_types && refs.lesson_types.length > 0
                   ? refs.lesson_types
@@ -795,8 +795,8 @@ export const LessonModal: React.FC<LessonModalProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Hash className="w-3.5 h-3.5 text-sky-400" />
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                <Hash className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Номер занятия</span>
               </label>
               <input
@@ -806,7 +806,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                 value={lessonNum}
                 onChange={(e) => setLessonNum(e.target.value)}
                 placeholder="1"
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-sky-500 font-mono transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-sky-500 font-mono transition"
               />
             </div>
           </div>
@@ -814,8 +814,8 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           {/* 4. ДИСЦИПЛИНА С КАТЕГОРИЯМИ И ТАБАМИ */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Дисциплина</span>
               </label>
               {/* Кнопки рекомендаций: Гибридный, Математика и ИИ-подбор */}
@@ -826,15 +826,15 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   disabled={recLoading}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
                     isRecOpen && recType === 'smart'
-                      ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                      : 'bg-slate-950 border-slate-800 text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-950/30'
+                      ? 'bg-emerald-500/25 border-emerald-400 text-emerald-700 dark:text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-emerald-600 dark:text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
                   }`}
                   title="Гибридный взвешенный подбор (Жаккар & CSP + баланс нагрузки)"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
                   <span>Гибрид</span>
                   {isRecOpen && recType === 'smart' && smartRecommendations.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500 text-slate-950 font-bold">
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500 text-white font-bold">
                       {smartRecommendations.length}
                     </span>
                   )}
@@ -846,15 +846,15 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   disabled={recLoading}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
                     isRecOpen && recType === 'math'
-                      ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-sm'
-                      : 'bg-slate-950 border-slate-800 text-amber-400 hover:border-amber-500/50 hover:bg-amber-950/30'
+                      ? 'bg-amber-500/20 border-amber-400 text-amber-700 dark:text-amber-200 shadow-sm'
+                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-amber-600 dark:text-amber-400 hover:border-amber-500/50 hover:bg-amber-50 dark:hover:bg-amber-950/30'
                   }`}
                   title="Математический расчет по опыту и кафедре"
                 >
-                  <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+                  <Lightbulb className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
                   <span>Математика</span>
                   {isRecOpen && recType === 'math' && recommendations.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500 text-slate-950 font-bold">
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500 text-white font-bold">
                       {recommendations.length}
                     </span>
                   )}
@@ -866,12 +866,12 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   disabled={recLoading}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
                     isRecOpen && recType === 'ai'
-                      ? 'bg-indigo-500/25 border-indigo-400 text-indigo-200 shadow-[0_0_10px_rgba(99,102,241,0.3)]'
-                      : 'bg-slate-950 border-slate-800 text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-950/30'
+                      ? 'bg-indigo-500/25 border-indigo-400 text-indigo-700 dark:text-indigo-200 shadow-[0_0_10px_rgba(99,102,241,0.3)]'
+                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
                   }`}
                   title="ИИ-рекомендации с учетом занятости в слоте и анализа кафедры"
                 >
-                  <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                  <Bot className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                   <span>ИИ-подбор</span>
                   {isRecOpen && recType === 'ai' && recommendations.length > 0 && (
                     <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-indigo-500 text-white font-bold">
@@ -883,14 +883,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             </div>
 
             {/* Prefix Tabs */}
-            <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 max-h-24 overflow-y-auto custom-scrollbar">
+            <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 max-h-24 overflow-y-auto custom-scrollbar">
               <button
                 type="button"
                 onClick={() => setCourseTab('all')}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition ${
                   courseTab === 'all'
                     ? 'bg-sky-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
                 Все
@@ -908,7 +908,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition ${
                       courseTab === pref
                         ? 'bg-sky-600 text-white shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                     }`}
                   >
                     {pref} <span className="text-[10px] opacity-75">({count})</span>
@@ -935,7 +935,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                     setCourseSearch(e.target.value)
                     setIsCourseDropdownOpen(true)
                   }}
-                  className="w-full px-3 py-2 pr-8 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+                  className="w-full px-3 py-2 pr-8 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
                 />
                 {selectedCourseId && !isCourseDropdownOpen && (
                   <button
@@ -944,7 +944,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                       setSelectedCourseId(null)
                       setCourseSearch('')
                     }}
-                    className="absolute right-2.5 top-2.5 text-slate-500 hover:text-white"
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 dark:hover:text-white"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -953,7 +953,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
 
               {/* Dropdown list */}
               {isCourseDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-slate-950 border border-slate-800 shadow-2xl custom-scrollbar py-1">
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl custom-scrollbar py-1">
                   {filteredCourses.length === 0 ? (
                     <div className="p-3 text-center text-xs text-slate-500">Ничего не найдено</div>
                   ) : (
@@ -970,14 +970,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                           }}
                           className={`flex items-center justify-between px-3 py-2 text-xs cursor-pointer transition ${
                             isSelected
-                              ? 'bg-sky-600/20 text-sky-300 font-semibold border-l-2 border-sky-400'
-                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                              ? 'bg-sky-50 dark:bg-sky-600/20 text-sky-700 dark:text-sky-300 font-semibold border-l-2 border-sky-400'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
-                          <span className="font-semibold text-white truncate mr-2">
+                          <span className="font-semibold text-slate-900 dark:text-white truncate mr-2">
                             {c.alias || c.name}
                           </span>
-                          <span className="text-[11px] text-slate-400 truncate max-w-[55%] text-right font-normal">
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[55%] text-right font-normal">
                             {c.title}
                           </span>
                         </div>
@@ -991,7 +991,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             {/* Карточка Умных Рекомендаций (Гибридный Жаккар / Математика / ИИ) */}
             {isRecOpen && (
               <div
-                className={`p-3.5 rounded-xl bg-slate-950/90 border shadow-xl space-y-2.5 mt-2 transition ${
+                className={`p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/90 border shadow-xl space-y-2.5 mt-2 transition ${
                   recType === 'smart'
                     ? 'border-emerald-500/40'
                     : recType === 'ai'
@@ -999,25 +999,25 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                     : 'border-amber-500/40'
                 }`}
               >
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
                   <div className="flex items-center gap-2">
                     {recType === 'smart' ? (
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-                        <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                        <Sparkles className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                         <span>Гибридный подбор (Взвешенный Жаккар & CSP)</span>
                       </div>
                     ) : recType === 'ai' ? (
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
-                        <Bot className="w-4 h-4 text-indigo-400" />
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                        <Bot className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                         <span>ИИ-подбор (с проверкой занятости в слоте)</span>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
-                        <Lightbulb className="w-4 h-4 text-amber-400" />
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-300">
+                        <Lightbulb className="w-4 h-4 text-amber-500 dark:text-amber-400" />
                         <span>Математический расчет (насыщенный скоринг)</span>
                       </div>
                     )}
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
                       ({recType === 'smart' ? smartRecommendations.length : recommendations.length} найдено)
                     </span>
                   </div>
@@ -1025,7 +1025,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsRecOpen(false)}
-                    className="text-slate-400 hover:text-white text-xs p-1"
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-white text-xs p-1"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1033,14 +1033,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
 
                 {/* БЛОК ПРЕДУПРЕЖДЕНИЯ О КОНФЛИКТЕ ЗАНЯТОСТИ ЦЕЛЕВОГО ПРЕПОДАВАТЕЛЯ */}
                 {recType === 'smart' && preferredConflict?.is_busy && (
-                  <div className="p-3 rounded-xl border border-rose-500/40 bg-rose-950/30 text-xs space-y-2.5">
+                  <div className="p-3 rounded-xl border border-rose-300 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-950/30 text-xs space-y-2.5">
                     <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-rose-300">
+                        <div className="font-semibold text-rose-700 dark:text-rose-300">
                           Конфликт занятости преподавателя
                         </div>
-                        <div className="text-[11px] text-rose-200/90 mt-0.5">
+                        <div className="text-[11px] text-rose-700/90 dark:text-rose-200/90 mt-0.5">
                           {preferredConflict.description || 'Преподаватель занят на другом занятии в этот слот.'}
                         </div>
                       </div>
@@ -1048,8 +1048,8 @@ export const LessonModal: React.FC<LessonModalProps> = ({
 
                     {/* Быстрые свободные замены */}
                     {topFreeReplacements.length > 0 && (
-                      <div className="space-y-1.5 pt-1.5 border-t border-rose-500/20">
-                        <div className="text-[10px] text-slate-400 font-medium">Рекомендуемые свободные замены:</div>
+                      <div className="space-y-1.5 pt-1.5 border-t border-rose-200 dark:border-rose-500/20">
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Рекомендуемые свободные замены:</div>
                         <div className="flex flex-wrap gap-2">
                           {topFreeReplacements.map((cand) => (
                             <button
@@ -1069,8 +1069,8 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                     )}
 
                     {/* Кнопка подбора свободных окон */}
-                    <div className="pt-1.5 border-t border-rose-500/20 flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-[10px] text-slate-400">Либо перенести пару на свободное окно:</span>
+                    <div className="pt-1.5 border-t border-rose-200 dark:border-rose-500/20 flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Либо перенести пару на свободное окно:</span>
                       <button
                         type="button"
                         onClick={handleFetchSuggestedSlots}
@@ -1091,7 +1091,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                             <span>Анализ доступных слотов на неделе...</span>
                           </div>
                         ) : suggestedSlots.length === 0 ? (
-                          <div className="py-2 text-center text-[10px] text-slate-400">
+                          <div className="py-2 text-center text-[10px] text-slate-500 dark:text-slate-400">
                             Нет свободных окон, подходящих для преподавателя и группы на этой неделе
                           </div>
                         ) : (
@@ -1099,18 +1099,18 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                             <div
                               key={idx}
                               onClick={() => handleApplySlot(slot)}
-                              className="p-2 rounded-lg bg-slate-900/90 border border-slate-700/80 hover:border-sky-500/60 hover:bg-slate-800 cursor-pointer transition flex items-center justify-between text-xs"
+                              className="p-2 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 hover:border-sky-500/60 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition flex items-center justify-between text-xs"
                             >
                               <div>
-                                <div className="font-semibold text-white flex items-center gap-1.5">
+                                <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                                   <span>{slot.day_name}, {slot.date_str}</span>
-                                  <span className="text-sky-300 font-bold">• {slot.pair_number}-я пара</span>
-                                  {slot.time_str && <span className="text-slate-400 text-[10px]">({slot.time_str})</span>}
+                                  <span className="text-sky-600 dark:text-sky-300 font-bold">• {slot.pair_number}-я пара</span>
+                                  {slot.time_str && <span className="text-slate-500 dark:text-slate-400 text-[10px]">({slot.time_str})</span>}
                                 </div>
-                                <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                  <span className="text-emerald-400 font-medium">Удобство: {slot.convenience_score}%</span>
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">Удобство: {slot.convenience_score}%</span>
                                   {slot.badge && (
-                                    <span className="px-1 py-0.2 rounded bg-slate-800 text-slate-300 text-[9px] border border-slate-700">
+                                    <span className="px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] border border-slate-200 dark:border-slate-700">
                                       {slot.badge}
                                     </span>
                                   )}
@@ -1133,14 +1133,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
 
                 {/* СПИСОК РЕКОМЕНДАЦИЙ */}
                 {recLoading ? (
-                  <div className="py-5 flex flex-col items-center justify-center gap-2 text-xs text-slate-400">
+                  <div className="py-5 flex flex-col items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <Loader2
                       className={`w-5 h-5 animate-spin ${
                         recType === 'smart'
-                          ? 'text-emerald-400'
+                          ? 'text-emerald-500 dark:text-emerald-400'
                           : recType === 'ai'
-                          ? 'text-indigo-400'
-                          : 'text-amber-400'
+                          ? 'text-indigo-500 dark:text-indigo-400'
+                          : 'text-amber-500 dark:text-amber-400'
                       }`}
                     />
                     <span>
@@ -1163,18 +1163,18 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                         const score = rec.match_score
                         const scoreColor =
                           score >= 70
-                            ? 'text-emerald-400 border-emerald-500/40 bg-emerald-950/40'
+                            ? 'text-emerald-700 dark:text-emerald-400 border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/40'
                             : score >= 40
-                            ? 'text-amber-400 border-amber-500/40 bg-amber-950/40'
-                            : 'text-rose-400 border-rose-500/40 bg-rose-950/40'
+                            ? 'text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-50 dark:bg-amber-950/40'
+                            : 'text-rose-700 dark:text-rose-400 border-rose-500/40 bg-rose-50 dark:bg-rose-950/40'
 
                         return (
                           <div
                             key={rec.mid}
                             className={`p-2.5 rounded-xl border text-xs transition ${
                               isAdded
-                                ? 'bg-slate-900/90 border-sky-500/40'
-                                : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                                ? 'bg-sky-50 dark:bg-slate-900/90 border-sky-400 dark:border-sky-500/40'
+                                : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
@@ -1185,38 +1185,38 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                 />
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-semibold text-white truncate">
+                                    <span className="font-semibold text-slate-900 dark:text-white truncate">
                                       {rec.full_name}
                                     </span>
                                     {rec.degree_short && (
-                                      <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-0.5">
                                         <GraduationCap className="w-2.5 h-2.5" />
                                         {rec.degree_short}
                                       </span>
                                     )}
                                     {rec.badge_text && (
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                         {rec.badge_text}
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
                                     {rec.same_group_lessons > 0 ? (
-                                      <span className="text-sky-300 font-medium">
+                                      <span className="text-sky-600 dark:text-sky-300 font-medium">
                                         {rec.same_group_lessons} зан. с этой группой
                                       </span>
                                     ) : (
                                       <span>По курсу: {rec.total_course_lessons} пар</span>
                                     )}
-                                    <span className="text-emerald-400 font-mono">
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-mono">
                                       J: {rec.jaccard_score.toFixed(2)}
                                     </span>
                                     {rec.overlap_score > 0 && (
-                                      <span className="text-teal-400 font-mono">
+                                      <span className="text-teal-600 dark:text-teal-400 font-mono">
                                         O: {rec.overlap_score.toFixed(2)}
                                       </span>
                                     )}
-                                    <span className="text-slate-500">
+                                    <span className="text-slate-400 dark:text-slate-500">
                                       ({rec.day_load_pairs} пар в этот день)
                                     </span>
                                   </div>
@@ -1239,7 +1239,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                   }}
                                   className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition ${
                                     isAdded
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40'
                                       : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
                                   }`}
                                 >
@@ -1249,31 +1249,31 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                             </div>
 
                             {/* Детализация общих дисциплин и статус слота */}
-                            <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px]">
+                            <div className="mt-2 pt-1.5 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[10px]">
                               <span
                                 className={`inline-flex items-center gap-1 font-medium ${
-                                  rec.is_free ? 'text-emerald-400' : 'text-rose-400'
+                                  rec.is_free ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                                 }`}
                               >
                                 {rec.is_free ? 'Свободен в этот слот' : 'Занят в этот слот'}
                               </span>
                               {rec.reason && (
-                                <span className="text-slate-400 italic truncate max-w-[70%] text-right">
+                                <span className="text-slate-500 dark:text-slate-400 italic truncate max-w-[70%] text-right">
                                   {rec.reason}
                                 </span>
                               )}
                             </div>
 
                             {rec.shared_courses && rec.shared_courses.length > 0 && (
-                              <div className="mt-1 flex items-center gap-1 text-[9px] text-slate-400 flex-wrap">
-                                <span className="text-slate-500">Общие дисциплины:</span>
+                              <div className="mt-1 flex items-center gap-1 text-[9px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                <span className="text-slate-400 dark:text-slate-500">Общие дисциплины:</span>
                                 {rec.shared_courses.slice(0, 3).map((cTitle, idx) => (
-                                  <span key={idx} className="px-1 py-0.2 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                                  <span key={idx} className="px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                                     {cTitle}
                                   </span>
                                 ))}
                                 {rec.shared_courses.length > 3 && (
-                                  <span className="text-slate-500">+{rec.shared_courses.length - 3}</span>
+                                  <span className="text-slate-400 dark:text-slate-500">+{rec.shared_courses.length - 3}</span>
                                 )}
                               </div>
                             )}
@@ -1293,20 +1293,20 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                       const score = rec.ai_score ?? rec.math_score ?? rec.confidence ?? 0
                       const scoreColor =
                         score >= 70
-                          ? 'text-emerald-400 border-emerald-500/40 bg-emerald-950/40'
+                          ? 'text-emerald-700 dark:text-emerald-400 border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/40'
                           : score >= 40
-                          ? 'text-amber-400 border-amber-500/40 bg-amber-950/40'
-                          : 'text-rose-400 border-rose-500/40 bg-rose-950/40'
+                          ? 'text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-50 dark:bg-amber-950/40'
+                          : 'text-rose-700 dark:text-rose-400 border-rose-500/40 bg-rose-50 dark:bg-rose-950/40'
 
-                      return (
-                        <div
-                          key={rec.mid}
-                          className={`p-2.5 rounded-xl border text-xs transition ${
-                            isAdded
-                              ? 'bg-slate-900/90 border-sky-500/40'
-                              : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
+                        return (
+                          <div
+                            key={rec.mid}
+                            className={`p-2.5 rounded-xl border text-xs transition ${
+                              isAdded
+                                ? 'bg-sky-50 dark:bg-slate-900/90 border-sky-400 dark:border-sky-500/40'
+                                : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                            }`}
+                          >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <span
@@ -1315,19 +1315,19 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                               />
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-semibold text-white truncate">
+                                  <span className="font-semibold text-slate-900 dark:text-white truncate">
                                     {rec.full_name}
                                   </span>
                                   {rec.degree_short && (
-                                    <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-0.5">
                                       <GraduationCap className="w-2.5 h-2.5" />
                                       {rec.degree_short}
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                                   {rec.same_group_count > 0 ? (
-                                    <span className="text-sky-300 font-medium">
+                                    <span className="text-sky-600 dark:text-sky-300 font-medium">
                                       {rec.same_group_count} зан. с этой группой • Всего: {rec.total_count}
                                     </span>
                                   ) : (
@@ -1355,7 +1355,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                                 }}
                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition ${
                                   isAdded
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40'
                                     : recType === 'ai'
                                     ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
                                     : 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm'
@@ -1368,16 +1368,16 @@ export const LessonModal: React.FC<LessonModalProps> = ({
 
                           {/* Статус слота и объяснение ИИ */}
                           {recType === 'ai' && (
-                            <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px]">
+                            <div className="mt-2 pt-1.5 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[10px]">
                               <span
                                 className={`inline-flex items-center gap-1 font-medium ${
-                                  rec.is_free ? 'text-emerald-400' : 'text-rose-400'
+                                  rec.is_free ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                                 }`}
                               >
                                 {rec.is_free ? 'Свободен в этот слот' : 'Занят в этот слот'}
                               </span>
                               {rec.reason && (
-                                <span className="text-slate-400 italic truncate max-w-[70%] text-right">
+                                <span className="text-slate-500 dark:text-slate-400 italic truncate max-w-[70%] text-right">
                                   {rec.reason}
                                 </span>
                               )}
@@ -1395,11 +1395,11 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           {/* 5. МНОЖЕСТВЕННЫЙ ВЫБОР ПРЕПОДАВАТЕЛЕЙ */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-sky-400" />
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Преподаватели</span>
               </label>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
                 {selectedTeacherIds.length === 0
                   ? 'Ничего не выбрано'
                   : `Выбрано: ${selectedTeacherIds.length}`}
@@ -1407,7 +1407,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             </div>
 
             {/* PMK Tabs */}
-            <div className="flex gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <div className="flex gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80">
               {[
                 { id: 'all', label: 'Все' },
                 { id: '1', label: 'ПМК 1' },
@@ -1421,7 +1421,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   className={`px-3 py-1 rounded-lg text-[11px] font-medium transition ${
                     teacherPmkTab === tab.id
                       ? 'bg-sky-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                   }`}
                 >
                   {tab.label}
@@ -1431,14 +1431,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
 
             {/* Selected Tags */}
             {selectedTeacherIds.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-950/40 border border-slate-800/60 min-h-[38px]">
+              <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 min-h-[38px]">
                 {selectedTeacherIds.map((id) => {
                   const t = refs?.teachers?.find((x) => x.id === id)
                   const name = t?.full_name || `ID ${id}`
                   return (
                     <span
                       key={id}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-800/90 text-slate-200 border border-slate-700 shadow-sm"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-100 dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-sm"
                     >
                       <span
                         className="w-2 h-2 rounded-full shrink-0"
@@ -1448,7 +1448,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveTeacher(id)}
-                        className="hover:text-rose-400 transition ml-0.5"
+                        className="hover:text-rose-500 dark:hover:text-rose-400 transition ml-0.5"
                       >
                         ×
                       </button>
@@ -1469,11 +1469,11 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   setTeacherSearch(e.target.value)
                   setIsTeacherDropdownOpen(true)
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
               />
 
               {isTeacherDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-slate-950 border border-slate-800 shadow-2xl custom-scrollbar py-1">
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl custom-scrollbar py-1">
                   {filteredTeachers.length === 0 ? (
                     <div className="p-3 text-center text-xs text-slate-500">Ничего не найдено</div>
                   ) : (
@@ -1492,22 +1492,22 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                           onClick={() => handleToggleTeacher(t.id)}
                           className={`flex items-center gap-2.5 px-3 py-2 text-xs cursor-pointer transition ${
                             isSelected
-                              ? 'bg-sky-600/20 text-white'
-                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                              ? 'bg-sky-50 dark:bg-sky-600/20 text-sky-800 dark:text-white font-medium'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
                             readOnly
-                            className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-0"
+                            className="rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sky-500 focus:ring-0"
                           />
                           <span
                             className="w-2 h-2 rounded-full shrink-0"
                             style={{ backgroundColor: getTeacherColor(t.id) }}
                           />
                           <span className="flex-1 truncate font-medium">{t.full_name}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
                             {pmkLabel}
                           </span>
                         </div>
@@ -1522,11 +1522,11 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           {/* 6. МНОЖЕСТВЕННЫЙ ВЫБОР АУДИТОРИЙ */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-sky-400" />
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Аудитории</span>
               </label>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
                 {selectedRoomIds.length === 0
                   ? 'Выбрано: 1 (-- по умолчанию)'
                   : `Выбрано: ${selectedRoomIds.length}`}
@@ -1534,14 +1534,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             </div>
 
             {/* Building Tabs */}
-            <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80">
               <button
                 type="button"
                 onClick={() => setRoomBuildingTab('all')}
                 className={`px-3 py-1 rounded-lg text-[11px] font-medium transition ${
                   roomBuildingTab === 'all'
                     ? 'bg-sky-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
                 Все
@@ -1554,7 +1554,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   className={`px-3 py-1 rounded-lg text-[11px] font-medium transition ${
                     roomBuildingTab === b
                       ? 'bg-sky-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                   }`}
                 >
                   {b}
@@ -1563,9 +1563,9 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             </div>
 
             {/* Selected Tags */}
-            <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-950/40 border border-slate-800/60 min-h-[38px]">
+            <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 min-h-[38px]">
               {selectedRoomIds.length === 0 ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-sky-950/40 text-sky-400 border border-sky-800/50 italic">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400 border border-sky-200 dark:border-sky-800/50 italic">
                   -- (по умолчанию)
                 </span>
               ) : (
@@ -1575,13 +1575,13 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   return (
                     <span
                       key={id}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-800/90 text-slate-200 border border-slate-700 shadow-sm"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-100 dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-sm"
                     >
                       <span>{name}</span>
                       <button
                         type="button"
                         onClick={() => handleRemoveRoom(id)}
-                        className="hover:text-rose-400 transition ml-0.5"
+                        className="hover:text-rose-500 dark:hover:text-rose-400 transition ml-0.5"
                       >
                         ×
                       </button>
@@ -1602,11 +1602,11 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   setRoomSearch(e.target.value)
                   setIsRoomDropdownOpen(true)
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
               />
 
               {isRoomDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-slate-950 border border-slate-800 shadow-2xl custom-scrollbar py-1">
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl custom-scrollbar py-1">
                   {filteredRooms.length === 0 ? (
                     <div className="p-3 text-center text-xs text-slate-500">Ничего не найдено</div>
                   ) : (
@@ -1623,18 +1623,18 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                           onClick={() => handleToggleRoom(rId, isDefault)}
                           className={`flex items-center gap-2.5 px-3 py-2 text-xs cursor-pointer transition ${
                             isSelected
-                              ? 'bg-sky-600/20 text-white'
-                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                              ? 'bg-sky-50 dark:bg-sky-600/20 text-sky-800 dark:text-white font-medium'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
                             readOnly
-                            className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-0"
+                            className="rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sky-500 focus:ring-0"
                           />
                           <span className="flex-1 truncate font-medium">{rName}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
                             {building}
                           </span>
                         </div>
@@ -1649,11 +1649,11 @@ export const LessonModal: React.FC<LessonModalProps> = ({
           {/* 7. МНОЖЕСТВЕННЫЙ ВЫБОР ГРУПП */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-sky-400" />
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
                 <span>Группы</span>
               </label>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
                 {selectedGroupIds.length === 0
                   ? 'Ничего не выбрано'
                   : groupStreamResult.streamBadges.length > 0
@@ -1663,14 +1663,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
             </div>
 
             {/* Faculty Tabs */}
-            <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 max-h-24 overflow-y-auto custom-scrollbar">
+            <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 max-h-24 overflow-y-auto custom-scrollbar">
               <button
                 type="button"
                 onClick={() => setGroupFacultyTab('all')}
                 className={`px-3 py-1 rounded-lg text-[11px] font-medium transition ${
                   groupFacultyTab === 'all'
                     ? 'bg-sky-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
                 Все
@@ -1683,7 +1683,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   className={`px-3 py-1 rounded-lg text-[11px] font-medium transition ${
                     groupFacultyTab === String(f.id)
                       ? 'bg-sky-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                   }`}
                 >
                   {f.short_name || f.name}
@@ -1696,14 +1696,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({
               <div className="space-y-2">
                 {/* Плашки автоматически сформированных потоков */}
                 {groupStreamResult.streamBadges.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-sky-950/30 border border-sky-500/30">
+                  <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-500/30">
                     {groupStreamResult.streamBadges.map((badge) => (
                       <div
                         key={badge.streamName}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-sky-600/25 border border-sky-400/50 text-sky-200 text-xs font-semibold shadow-sm"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-sky-100 dark:bg-sky-600/25 border border-sky-300 dark:border-sky-400/50 text-sky-800 dark:text-sky-200 text-xs font-semibold shadow-sm"
                       >
-                        <span className="text-sky-300">Сформирован {badge.streamName}</span>
-                        <span className="text-[10px] text-sky-400/80 font-normal">
+                        <span className="text-sky-700 dark:text-sky-300">Сформирован {badge.streamName}</span>
+                        <span className="text-[10px] text-sky-600/80 dark:text-sky-400/80 font-normal">
                           ({badge.groups.join(', ')})
                         </span>
                       </div>
@@ -1711,20 +1711,20 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-950/40 border border-slate-800/60 min-h-[38px]">
+                <div className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 min-h-[38px]">
                   {selectedGroupIds.map((id) => {
                     const g = refs?.groups?.find((x) => (x.id || x.gid) === id)
                     const name = g?.name || g?.group_name || `ID ${id}`
                     return (
                       <span
                         key={id}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-800/90 text-slate-200 border border-slate-700 shadow-sm"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-100 dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-sm"
                       >
                         <span>{name}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveGroup(id)}
-                          className="hover:text-rose-400 transition ml-0.5"
+                          className="hover:text-rose-500 dark:hover:text-rose-400 transition ml-0.5"
                         >
                           ×
                         </button>
@@ -1746,11 +1746,11 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   setGroupSearch(e.target.value)
                   setIsGroupDropdownOpen(true)
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
               />
 
               {isGroupDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-slate-950 border border-slate-800 shadow-2xl custom-scrollbar py-1">
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl custom-scrollbar py-1">
                   {filteredGroups.length === 0 ? (
                     <div className="p-3 text-center text-xs text-slate-500">Ничего не найдено</div>
                   ) : (
@@ -1765,19 +1765,19 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                           onClick={() => handleToggleGroup(gId)}
                           className={`flex items-center gap-2.5 px-3 py-2 text-xs cursor-pointer transition ${
                             isSelected
-                              ? 'bg-sky-600/20 text-white'
-                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                              ? 'bg-sky-50 dark:bg-sky-600/20 text-sky-800 dark:text-white font-medium'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
                             readOnly
-                            className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-0"
+                            className="rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sky-500 focus:ring-0"
                           />
                           <span className="flex-1 truncate font-medium">{g.name || g.group_name}</span>
                           {faculty && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
                               {faculty.short_name || faculty.name}
                             </span>
                           )}
@@ -1792,13 +1792,13 @@ export const LessonModal: React.FC<LessonModalProps> = ({
         </div>
 
         {/* FOOTER */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800/80 bg-slate-950/60 backdrop-blur-sm">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-950/60 backdrop-blur-sm">
           {mode === 'edit' && event && (event.schedule_id || event.sheid) ? (
             <button
               type="button"
               onClick={handleDelete}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 hover:text-rose-300 transition shadow-sm"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 hover:text-rose-700 dark:hover:text-rose-300 transition shadow-sm"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Удалить</span>
@@ -1812,7 +1812,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
             >
               Отмена
             </button>

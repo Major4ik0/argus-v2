@@ -28,6 +28,38 @@ os.makedirs(TEACHERS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 
+def is_valid_face_geometry(box, frame_w: int, frame_h: int) -> bool:
+    """
+    Геометрический фильтр пропорций лица (Aspect Ratio & Min Size).
+    Исключает надписи на одежде, складки ткани и артефакты геометрии.
+    Поддерживает координаты (x1, y1, x2, y2) и (x, y, w, h).
+    """
+    if box is None or len(box) < 4:
+        return False
+
+    b0, b1, b2, b3 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+    if b2 > b0 and b3 > b1:
+        x1, y1, x2, y2 = b0, b1, b2, b3
+        w = x2 - x1
+        h = y2 - y1
+    else:
+        x1, y1 = b0, b1
+        w, h = b2, b3
+
+    # 1. Минимальные и максимальные адекватные размеры лица в кадре
+    if w < 50 or h < 50:
+        return False
+    if w > frame_w * 0.9 or h > frame_h * 0.9:
+        return False
+
+    # 2. Проверка соотношения сторон (высота / ширина)
+    aspect_ratio = float(h) / float(w)
+    if not (0.75 <= aspect_ratio <= 1.40):
+        return False
+
+    return True
+
+
 class OpenCVFaceVision:
     """Детектор лиц YuNet и экстрактор признаков SFace через нативный OpenCV 5 DNN."""
     def __init__(self, yunet_path: str = YUNET_PATH, sface_path: str = SFACE_PATH):
@@ -42,9 +74,9 @@ class OpenCVFaceVision:
         try:
             if os.path.exists(self.yunet_path) and hasattr(cv2, "FaceDetectorYN"):
                 self.detector = cv2.FaceDetectorYN.create(
-                    self.yunet_path, "", (320, 320), score_threshold=0.15, nms_threshold=0.3, top_k=5000
+                    self.yunet_path, "", (320, 320), score_threshold=0.55, nms_threshold=0.3, top_k=5000
                 )
-                print(f"[YuNet] Детектор лиц успешно загружен: {self.yunet_path}")
+                print(f"[YuNet] Детектор лиц успешно загружен: {self.yunet_path} (порог детекции: 0.55)")
             else:
                 print(f"[YuNet] Веса детектора не найдены ({self.yunet_path}).")
 
@@ -75,12 +107,17 @@ class OpenCVFaceVision:
                 results = []
                 for face in faces:
                     score = float(face[-1])
-                    if score < 0.15:
+                    if score < 0.55:
                         continue
                     bx = max(0, int(face[0]))
                     by = max(0, int(face[1]))
                     bw = max(10, int(face[2]))
                     bh = max(10, int(face[3]))
+
+                    # Геометрический фильтр пропорций лица
+                    if not is_valid_face_geometry((bx, by, bx + bw, by + bh), w, h):
+                        continue
+
                     aligned = self.recognizer.alignCrop(img_bgr, face)
                     results.append(((bx, by, bw, bh), aligned, score))
                 return results
@@ -220,7 +257,8 @@ class FaceRecognitionCamera:
         results = self.vision.detect_and_align(img)
         if not results:
             return None
-        results.sort(key=lambda item: item[2], reverse=True)
+        # Сортировка по площади (w * h) - приоритет самого крупного лица
+        results.sort(key=lambda item: item[0][2] * item[0][3], reverse=True)
         _, aligned, _ = results[0]
         feat = self.vision.extract_feature(aligned)
         norm = np.linalg.norm(feat)
@@ -536,7 +574,8 @@ class FaceRecognitionCamera:
         h, w = img_bgr.shape[:2]
         results = self.vision.detect_and_align(img_bgr)
         if results:
-            results.sort(key=lambda item: item[2], reverse=True)
+            # Сортировка по площади (w * h) - приоритет самого крупного лица
+            results.sort(key=lambda item: item[0][2] * item[0][3], reverse=True)
             bbox, aligned, score = results[0]
             feat = self.vision.extract_feature(aligned)
             return feat.tobytes(), bbox
@@ -824,6 +863,10 @@ class FaceRecognitionCamera:
             max_sim = 0.0
 
             if results:
+                # 4. Подавление дубликатов (Приоритет главного пользователя):
+                # Сортируем лица по площади (w * h) по убыванию (человек, стоящий ближе всего к терминалу)
+                results.sort(key=lambda item: item[0][2] * item[0][3], reverse=True)
+
                 with self.inference_lock:
                     known_encs = list(self.known_face_encodings)
                     known_nms = list(self.known_face_names)
@@ -852,22 +895,34 @@ class FaceRecognitionCamera:
                             face_max_sim = max_val
 
                     x, y, bw, bh = bbox
+
+                    # 3. Фильтрация отрисовки и исключение отрицательных скоров:
                     if matched_id:
-                        color = (16, 185, 129)
+                        # Зеленая рамка (Преподаватель опознан): best_similarity >= similarity_threshold
+                        color = (16, 185, 129)  # Зеленый BGR
                         label = f"{matched_name} ({face_max_sim:.2f})"
+                        cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
+                        cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
+                        cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                    elif score >= 0.60 and 0.15 <= face_max_sim < self.recognition_threshold:
+                        # Оранжевая рамка (Неопознанный человек): det_score >= 0.60 и 0.15 <= best_sim < 0.45
+                        color = (11, 158, 245)  # Оранжевый BGR (RGB: 245, 158, 11)
+                        label = "Не опознан"
+                        cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
+                        cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
+                        cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
                     else:
-                        color = (59, 130, 246)
-                        label = f"Лицо ({face_max_sim:.2f})"
+                        # Полный игнор ложных срабатываний: сходство отрицательное или близко к нулю (< 0.15)
+                        # Рамку НЕ ОТРИСОВЫВАТЬ ВООБЩЕ.
+                        pass
 
-                    cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
-                    cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
-                    cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-
-                    if face_max_sim > best_sim:
+                    # Приоритет первого (самого крупного) опознанного лица
+                    if matched_id and best_id is None:
                         best_sim = face_max_sim
-                        if matched_id:
-                            best_id = matched_id
-                            best_name = matched_name
+                        best_id = matched_id
+                        best_name = matched_name
+                    elif best_id is None and face_max_sim > best_sim:
+                        best_sim = face_max_sim
 
                 max_sim = best_sim
                 detected_cand_id = best_id

@@ -27,30 +27,30 @@ const PERIODS = [
 
 export const ScheduleGrid: React.FC<ScheduleGridProps> = ({ events }) => {
   return (
-    <div className="flex-1 overflow-auto p-4 bg-slate-950">
-      <div className="min-w-[980px] rounded-xl border border-slate-800 bg-slate-900/40 backdrop-blur shadow-xl overflow-hidden">
+    <div className="flex-1 overflow-auto p-4 bg-slate-100 dark:bg-slate-950">
+      <div className="min-w-[980px] rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 backdrop-blur shadow-xl overflow-hidden">
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-slate-800 bg-slate-900/80">
-              <th className="p-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 w-28 text-center border-r border-slate-800">
+            <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+              <th className="p-3 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-28 text-center border-r border-slate-200 dark:border-slate-800">
                 Время / Пара
               </th>
               {DAYS.map((day) => (
                 <th
                   key={day.id}
-                  className="p-3 text-xs font-bold uppercase tracking-wider text-slate-200 border-l border-slate-800 text-center"
+                  className="p-3 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 border-l border-slate-200 dark:border-slate-800 text-center"
                 >
                   <span>{day.name}</span>
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
             {PERIODS.map((period) => (
-              <tr key={period.id} className="hover:bg-slate-900/30 transition-colors">
-                <td className="p-3 text-center bg-slate-900/50 border-r border-slate-800">
-                  <div className="text-sm font-bold text-slate-200">{period.name}</div>
-                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{period.time}</div>
+              <tr key={period.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                <td className="p-3 text-center bg-slate-50/70 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800">
+                  <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{period.name}</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">{period.time}</div>
                 </td>
 
                 {DAYS.map((day) => {
@@ -63,7 +63,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({ events }) => {
                   return (
                     <td
                       key={day.id}
-                      className="p-2 border-l border-slate-800 align-top h-36 w-1/6"
+                      className="p-2 border-l border-slate-200 dark:border-slate-800 align-top h-36 w-1/6"
                     >
                       {cellEvents.length > 0 ? (
                         <div className="flex flex-col gap-2 h-full">
@@ -79,7 +79,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({ events }) => {
                           })}
                         </div>
                       ) : (
-                        <div className="h-full min-h-[96px] rounded-lg border border-dashed border-slate-800/60 flex items-center justify-center text-slate-700 text-xs font-medium">
+                        <div className="h-full min-h-[96px] rounded-lg border border-dashed border-slate-200 dark:border-slate-800/60 flex items-center justify-center text-slate-400 dark:text-slate-700 text-xs font-medium">
                           —
                         </div>
                       )}

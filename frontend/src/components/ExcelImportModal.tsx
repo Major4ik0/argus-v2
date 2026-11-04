@@ -203,10 +203,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     allErrors.length > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900/95 p-6 shadow-2xl space-y-5 text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn">
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 p-6 shadow-2xl space-y-5 text-slate-900 dark:text-white">
         {/* Заголовок */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-md">
               <FileSpreadsheet className="w-5 h-5 text-white" />
@@ -214,11 +214,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             <div>
               <h2 className="text-base font-bold flex items-center gap-2">
                 <span>Импорт расписания из Excel</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   .xlsx / .xls
                 </span>
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Загрузите файлы сетки расписания кафедры. Система сопоставит группы, преподавателей и аудитории.
               </p>
             </div>
@@ -228,7 +228,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             type="button"
             onClick={isFinished ? handleFinishAndClose : onClose}
             disabled={isProcessing}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition disabled:opacity-40"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-40"
           >
             <X className="w-5 h-5" />
           </button>
@@ -237,50 +237,50 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         {/* 1. СОСТОЯНИЕ РЕЗУЛЬТАТОВ (ИМПОРТ ЗАВЕРШЕН) */}
         {isFinished ? (
           <div className="space-y-4 animate-fadeIn">
-            <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-3">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
                   <FileCheck className="w-5 h-5" />
                   <span>Импорт успешно завершен</span>
                 </div>
-                <span className="text-xs font-mono text-slate-400">
+                <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
                   Обработано файлов: {files.length}
                 </span>
               </div>
 
               {/* Карточки KPI итогов */}
               <div className="grid grid-cols-3 gap-2.5 pt-1 text-center">
-                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30">
-                  <div className="text-[11px] font-medium text-emerald-400/80 flex items-center justify-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <div className="p-3 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/30">
+                  <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400/80 flex items-center justify-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400" />
                     <span>Успешно добавлено</span>
                   </div>
-                  <div className="text-xl font-bold text-emerald-300 font-mono mt-0.5">
+                  <div className="text-xl font-bold text-emerald-600 dark:text-emerald-300 font-mono mt-0.5">
                     +{totalInserted} <span className="text-xs font-normal">пар</span>
                   </div>
                   {totalUpdated > 0 && (
-                    <div className="text-[10px] text-sky-400 mt-1 font-mono">
+                    <div className="text-[10px] text-sky-600 dark:text-sky-400 mt-1 font-mono">
                       (обновлено: {totalUpdated})
                     </div>
                   )}
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                  <div className="text-[11px] font-medium text-slate-400 flex items-center justify-center gap-1.5">
+                <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center justify-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-slate-400" />
                     <span>Пропущено / Дубликаты</span>
                   </div>
-                  <div className="text-xl font-bold text-slate-300 font-mono mt-0.5">
+                  <div className="text-xl font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">
                     {totalSkipped} <span className="text-xs font-normal">строк</span>
                   </div>
                 </div>
 
-                <div className={`p-3 rounded-xl border ${totalFailed > 0 ? 'bg-rose-950/40 border-rose-500/30' : 'bg-slate-900 border-slate-800'}`}>
-                  <div className={`text-[11px] font-medium flex items-center justify-center gap-1.5 ${totalFailed > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                    <span className={`w-2 h-2 rounded-full ${totalFailed > 0 ? 'bg-rose-500' : 'bg-slate-500'}`} />
+                <div className={`p-3 rounded-xl border ${totalFailed > 0 ? 'bg-rose-500/10 dark:bg-rose-950/40 border-rose-500/30' : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800'}`}>
+                  <div className={`text-[11px] font-medium flex items-center justify-center gap-1.5 ${totalFailed > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                    <span className={`w-2 h-2 rounded-full ${totalFailed > 0 ? 'bg-rose-500' : 'bg-slate-400'}`} />
                     <span>Ошибок / Не найдено</span>
                   </div>
-                  <div className={`text-xl font-bold font-mono mt-0.5 ${totalFailed > 0 ? 'text-rose-300' : 'text-slate-400'}`}>
+                  <div className={`text-xl font-bold font-mono mt-0.5 ${totalFailed > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-600 dark:text-slate-400'}`}>
                     {totalFailed}
                   </div>
                 </div>
@@ -288,14 +288,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
               {/* Детализированный аккордеон с ненайденными сущностями / ошибками */}
               {hasIssues && (
-                <div className="pt-2 border-t border-slate-800/80">
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
                   <button
                     type="button"
                     onClick={() => setShowErrorDetails(!showErrorDetails)}
-                    className="flex items-center justify-between w-full text-xs font-semibold text-amber-400 hover:text-amber-300 transition py-1"
+                    className="flex items-center justify-between w-full text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition py-1"
                   >
                     <span className="flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
                       <span>
                         Журнал предупреждений и ненайденных сущностей (
                         {allUnmatchedTeachers.length + allUnmatchedCourses.length + allUnmatchedGroups.length + allErrors.length}
@@ -310,17 +310,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   </button>
 
                   {showErrorDetails && (
-                    <div className="mt-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs space-y-2.5 max-h-52 overflow-y-auto">
+                    <div className="mt-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-xs space-y-2.5 max-h-52 overflow-y-auto">
                       {allUnmatchedTeachers.length > 0 && (
                         <div>
-                          <div className="text-[11px] font-bold text-rose-400 mb-1">
+                          <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mb-1">
                             Не найдены преподаватели в штате кафедры ({allUnmatchedTeachers.length}):
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {allUnmatchedTeachers.map((t, idx) => (
                               <span
                                 key={idx}
-                                className="px-2 py-0.5 rounded bg-rose-950/50 text-rose-300 border border-rose-800/40 text-[11px] font-mono"
+                                className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40 text-[11px] font-mono"
                               >
                                 {t}
                               </span>
@@ -331,14 +331,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
                       {allUnmatchedCourses.length > 0 && (
                         <div>
-                          <div className="text-[11px] font-bold text-amber-400 mb-1">
+                          <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mb-1">
                             Не найдены дисциплины по шифру ({allUnmatchedCourses.length}):
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {allUnmatchedCourses.map((c, idx) => (
                               <span
                                 key={idx}
-                                className="px-2 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-800/40 text-[11px] font-mono"
+                                className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40 text-[11px] font-mono"
                               >
                                 {c}
                               </span>
@@ -349,14 +349,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
                       {allUnmatchedGroups.length > 0 && (
                         <div>
-                          <div className="text-[11px] font-bold text-sky-400 mb-1">
+                          <div className="text-[11px] font-bold text-sky-600 dark:text-sky-400 mb-1">
                             Не найдены группы ({allUnmatchedGroups.length}):
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {allUnmatchedGroups.map((g, idx) => (
                               <span
                                 key={idx}
-                                className="px-2 py-0.5 rounded bg-sky-950/50 text-sky-300 border border-sky-800/40 text-[11px] font-mono"
+                                className="px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/40 text-[11px] font-mono"
                               >
                                 {g}
                               </span>
@@ -367,10 +367,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
                       {allErrors.length > 0 && (
                         <div>
-                          <div className="text-[11px] font-bold text-slate-300 mb-1">
+                          <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                             Ошибки строк ({allErrors.length}):
                           </div>
-                          <div className="space-y-1 text-slate-400 text-[11px]">
+                          <div className="space-y-1 text-slate-600 dark:text-slate-400 text-[11px]">
                             {allErrors.slice(0, 30).map((err, idx) => (
                               <div key={idx} className="truncate">
                                 • [{err.file}] стр. {err.row_index}: {err.reason}
@@ -390,9 +390,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               <button
                 type="button"
                 onClick={resetAll}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition"
               >
-                <RefreshCw className="w-4 h-4 text-slate-400" />
+                <RefreshCw className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                 <span>Загрузить другие файлы</span>
               </button>
 
@@ -419,8 +419,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               }}
               className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2.5 ${
                 isDragging
-                  ? 'border-emerald-400 bg-emerald-950/20 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
-                  : 'border-slate-800 bg-slate-950/60 hover:border-slate-700 hover:bg-slate-950/90'
+                  ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                  : 'border-slate-300 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 hover:border-slate-400 dark:hover:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-950/90'
               } ${isProcessing ? 'pointer-events-none opacity-60' : ''}`}
             >
               <input
@@ -435,20 +435,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 disabled={isProcessing}
               />
 
-              <div className="p-3 rounded-full bg-slate-900 border border-slate-800 text-emerald-400">
+              <div className="p-3 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-emerald-600 dark:text-emerald-400">
                 <Upload className="w-6 h-6" />
               </div>
 
               <div>
-                <span className="text-xs font-semibold text-slate-200">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                   Перетащите файлы Excel сюда или{' '}
                 </span>
-                <span className="text-xs font-bold text-emerald-400 hover:underline">
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline">
                   выберите на устройстве
                 </span>
               </div>
 
-              <p className="text-[11px] text-slate-500 font-mono">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                 Поддерживаются форматы расписания кафедр: .xlsx и .xls
               </p>
             </div>
@@ -456,13 +456,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             {/* Список выбранных файлов */}
             {files.length > 0 && (
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
                   <span>Выбранные файлы ({files.length})</span>
                   {!isProcessing && (
                     <button
                       type="button"
                       onClick={resetAll}
-                      className="text-[11px] text-rose-400 hover:text-rose-300 transition"
+                      className="text-[11px] text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 transition"
                     >
                       Очистить список
                     </button>
@@ -475,34 +475,34 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     return (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs"
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs"
                       >
                         <div className="flex items-center gap-2.5 truncate">
-                          <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span className="truncate font-medium text-slate-200">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span className="truncate font-medium text-slate-800 dark:text-slate-200">
                             {item.file.name}
                           </span>
-                          <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0">
                             {sizeKb} КБ
                           </span>
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
                           {item.status === 'uploading' && (
-                            <span className="flex items-center gap-1 text-[11px] text-sky-400 font-medium">
+                            <span className="flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400 font-medium">
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               <span>Обработка</span>
                             </span>
                           )}
                           {item.status === 'success' && (
-                            <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
+                            <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               <span>Готово</span>
                             </span>
                           )}
                           {item.status === 'error' && (
                             <span
-                              className="flex items-center gap-1 text-[11px] text-rose-400 font-semibold"
+                              className="flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400 font-semibold"
                               title={item.errorMessage}
                             >
                               <AlertCircle className="w-3.5 h-3.5" />
@@ -513,7 +513,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                             <button
                               type="button"
                               onClick={() => removeFile(item.id)}
-                              className="p-1 text-slate-500 hover:text-rose-400 transition"
+                              className="p-1 text-slate-400 hover:text-rose-500 transition"
                               title="Удалить файл"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -529,18 +529,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
             {/* Прогресс-бар обработки */}
             {isProcessing && (
-              <div className="space-y-1.5 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <div className="flex items-center justify-between text-xs text-slate-300">
+              <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
                   <span className="flex items-center gap-1.5">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
                     <span>
                       Обработка файла {currentFileIndex} из {files.length}:{' '}
-                      <b className="text-white">{files[currentFileIndex - 1]?.file.name}</b>
+                      <b className="text-slate-900 dark:text-white">{files[currentFileIndex - 1]?.file.name}</b>
                     </span>
                   </span>
-                  <span className="font-mono text-emerald-400 font-bold">{progressPercent}%</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{progressPercent}%</span>
                 </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                   <div
                     className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300"
                     style={{ width: `${progressPercent}%` }}
@@ -550,12 +550,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             )}
 
             {/* Кнопки в состоянии выбора / загрузки */}
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isProcessing}
-                className="px-4 py-2 rounded-xl border border-slate-800 text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition disabled:opacity-40"
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition disabled:opacity-40"
               >
                 Отмена
               </button>

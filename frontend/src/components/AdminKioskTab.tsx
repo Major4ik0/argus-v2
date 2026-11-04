@@ -318,7 +318,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              className="p-1.5 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
             >
               <X className="w-5 h-5" />
             </button>
@@ -331,22 +331,22 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
         <div
           className={`px-6 py-2.5 text-xs font-semibold flex items-center justify-between border-b ${
             actionMessage.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
-              : 'bg-rose-950/60 border-rose-500/30 text-rose-300'
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+              : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-500/30 text-rose-800 dark:text-rose-300'
           }`}
         >
           <div className="flex items-center gap-2">
             {actionMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-400" />
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
             )}
             <span>{actionMessage.text}</span>
           </div>
           <button
             type="button"
             onClick={() => setActionMessage(null)}
-            className="text-slate-400 hover:text-white"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -359,18 +359,18 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
         {subTab === 'camera' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* Окно живого видеопотока */}
-            <div className="lg:col-span-7 rounded-3xl bg-slate-950 border border-slate-800 p-4 shadow-xl flex flex-col space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+            <div className="lg:col-span-7 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 shadow-xl flex flex-col space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800/80">
                 <div className="flex items-center gap-2">
                   <span className={`w-2.5 h-2.5 rounded-full ${hasStreamError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
-                  <span className="text-xs font-bold text-white tracking-wide uppercase">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white tracking-wide uppercase">
                     Живой видеопоток MJPEG
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleRefreshStream}
-                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px]"
+                  className="p-1.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 transition flex items-center gap-1 text-[11px]"
                   title="Переподключить поток"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -379,7 +379,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
               </div>
 
               {/* MJPEG Viewport */}
-              <div className="relative aspect-video rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800">
+              <div className="relative aspect-video rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-300 dark:border-slate-800">
                 {hasStreamError ? (
                   <div className="text-center p-4">
                     <p className="text-rose-400 text-sm font-semibold mb-2">Не удалось загрузить видеопоток</p>
@@ -407,17 +407,17 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1">
                 <span>Камера захватывает кадры без рамок для сохранения в базу данных.</span>
-                <span className="text-emerald-400 font-semibold">25–30 FPS</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">25–30 FPS</span>
               </div>
             </div>
 
             {/* Форма параметров */}
-            <div className="lg:col-span-5 rounded-3xl bg-slate-950 border border-slate-800 p-6 shadow-xl space-y-5">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-800">
-                <Sliders className="w-4 h-4 text-sky-400" />
-                <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+            <div className="lg:col-span-5 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-6 shadow-xl space-y-5">
+              <div className="flex items-center gap-2 pb-3 border-b border-slate-200 dark:border-slate-800">
+                <Sliders className="w-4 h-4 text-sky-500 dark:text-sky-400" />
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                   Настройки видеоаналитики
                 </h4>
               </div>
@@ -425,7 +425,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
               <form onSubmit={handleSaveSettings} className="space-y-4">
                 {/* Источник камеры */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     Источник видео (USB-индекс или RTSP/HTTP)
                   </label>
                   <input
@@ -433,7 +433,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                     value={settings.camera_source}
                     onChange={(e) => setSettings({ ...settings, camera_source: e.target.value })}
                     placeholder="0, 1 или rtsp://192.168.1.100:554/live"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500 font-mono transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-sky-500 font-mono transition"
                   />
                   <span className="text-[10px] text-slate-500 mt-1 block">
                     Для встроенной камеры введите 0 или 1; для IP-камеры потолка — RTSP-ссылку.
@@ -442,9 +442,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
 
                 {/* Порог сходства */}
                 <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     <span>Порог сходства (Косинусное расстояние):</span>
-                    <span className="font-mono text-sky-400 font-bold">{settings.recognition_threshold}</span>
+                    <span className="font-mono text-sky-500 dark:text-sky-400 font-bold">{settings.recognition_threshold}</span>
                   </div>
                   <input
                     type="range"
@@ -464,9 +464,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
 
                 {/* Таймаут присутствия */}
                 <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     <span>Таймер показа личного расписания:</span>
-                    <span className="font-mono text-sky-400 font-bold">{settings.idle_timeout} сек</span>
+                    <span className="font-mono text-sky-500 dark:text-sky-400 font-bold">{settings.idle_timeout} сек</span>
                   </div>
                   <input
                     type="range"
@@ -484,9 +484,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
 
                 {/* Интервал карусели */}
                 <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     <span>Интервал смены слайдов карусели:</span>
-                    <span className="font-mono text-sky-400 font-bold">{settings.carousel_interval} сек</span>
+                    <span className="font-mono text-sky-500 dark:text-sky-400 font-bold">{settings.carousel_interval} сек</span>
                   </div>
                   <input
                     type="range"
@@ -500,10 +500,10 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 </div>
 
                 {/* Флаг активности */}
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                   <div>
-                    <div className="text-xs font-bold text-white">Распознавание лиц включено</div>
-                    <div className="text-[10px] text-slate-400">Пуш событий по WebSocket на экран табло</div>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">Распознавание лиц включено</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">Пуш событий по WebSocket на экран табло</div>
                   </div>
                   <input
                     type="checkbox"
@@ -514,12 +514,12 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 </div>
 
                 {/* Зеркальное отображение камеры */}
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                   <div className="flex items-center gap-2.5">
-                    <FlipHorizontal className="w-4 h-4 text-sky-400" />
+                    <FlipHorizontal className="w-4 h-4 text-sky-500 dark:text-sky-400" />
                     <div>
-                      <div className="text-xs font-bold text-white">Зеркальное отображение камеры</div>
-                      <div className="text-[10px] text-slate-400">Отражать видеопоток по горизонтали (эффект зеркала)</div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white">Зеркальное отображение камеры</div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">Отражать видеопоток по горизонтали (эффект зеркала)</div>
                     </div>
                   </div>
                   <input
@@ -531,7 +531,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 </div>
 
                 {settingsSuccess && (
-                  <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium">
                     {settingsSuccess}
                   </div>
                 )}
@@ -553,28 +553,28 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
         {subTab === 'teachers' && (
           <div className="space-y-4">
             {/* Поиск и статистика */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
               <div className="relative w-full md:w-96">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Поиск преподавателя по ФИО или кафедре..."
-                  className="w-full px-4 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+                  className="w-full px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
                 />
               </div>
 
               <div className="flex items-center gap-4 text-xs">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-emerald-500" />
-                  <span className="text-slate-300">
-                    С биометрией: <strong className="text-white">{withPhotoCount}</strong>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    С биометрией: <strong className="text-slate-900 dark:text-white">{withPhotoCount}</strong>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-slate-600" />
-                  <span className="text-slate-300">
-                    Без фото: <strong className="text-white">{teachers.length - withPhotoCount}</strong>
+                  <span className="w-3 h-3 rounded-full bg-slate-400 dark:bg-slate-600" />
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Без фото: <strong className="text-slate-900 dark:text-white">{teachers.length - withPhotoCount}</strong>
                   </span>
                 </div>
               </div>
@@ -591,12 +591,12 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 {filteredTeachers.map((t) => (
                   <div
                     key={t.teacher_id}
-                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 flex flex-col justify-between shadow-lg space-y-3 transition group"
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 flex flex-col justify-between shadow-lg space-y-3 transition group"
                   >
                     <div>
                       {/* Шапка карточки: Фото + Статус */}
                       <div className="flex items-center gap-3">
-                        <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-slate-900 border-2 border-slate-800 shrink-0 flex items-center justify-center">
+                        <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-center">
                           {t.has_photo && t.photo_url ? (
                             <img
                               src={`${t.photo_url}?v=${cacheBuster}`}
@@ -604,7 +604,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <Camera className="w-6 h-6 text-slate-600" />
+                            <Camera className="w-6 h-6 text-slate-400 dark:text-slate-600" />
                           )}
                           {t.has_photo && (
                             <span className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-tl-lg flex items-center justify-center text-white">
@@ -614,20 +614,20 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                         </div>
 
                         <div className="overflow-hidden">
-                          <h5 className="text-xs font-bold text-white truncate group-hover:text-sky-300 transition">
+                          <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-sky-600 dark:group-hover:text-sky-300 transition">
                             {t.full_name}
                           </h5>
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5 truncate">
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                             {t.degree_short && (
-                              <span className="text-amber-400 font-semibold">{t.degree_short}</span>
+                              <span className="text-amber-600 dark:text-amber-400 font-semibold">{t.degree_short}</span>
                             )}
                             <span className="truncate">• {t.cathedra_name || 'Кафедра'}</span>
                           </div>
                           <span
                             className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
                               t.has_photo
-                                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400'
-                                : 'bg-rose-950/40 border-rose-500/30 text-rose-400'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
+                                : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400'
                             }`}
                           >
                             {t.has_photo ? 'Биометрия активна' : 'Нет биометрии'}
@@ -636,18 +636,18 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                       </div>
 
                       {/* Статистика подходов в карточке */}
-                      <div className="mt-3 pt-2 border-t border-slate-900 grid grid-cols-3 gap-1 text-center bg-slate-900/60 p-2 rounded-xl text-[10px]">
+                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-900 grid grid-cols-3 gap-1 text-center bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl text-[10px]">
                         <div>
                           <div className="text-slate-500">Сегодня</div>
-                          <div className="font-bold text-sky-400 font-mono text-xs">{t.visits_today || 0}</div>
+                          <div className="font-bold text-sky-600 dark:text-sky-400 font-mono text-xs">{t.visits_today || 0}</div>
                         </div>
                         <div>
                           <div className="text-slate-500">За неделю</div>
-                          <div className="font-bold text-indigo-400 font-mono text-xs">{t.visits_week || 0}</div>
+                          <div className="font-bold text-indigo-600 dark:text-indigo-400 font-mono text-xs">{t.visits_week || 0}</div>
                         </div>
                         <div>
                           <div className="text-slate-500">Всего</div>
-                          <div className="font-bold text-white font-mono text-xs">{t.visits_total || 0}</div>
+                          <div className="font-bold text-slate-900 dark:text-white font-mono text-xs">{t.visits_total || 0}</div>
                         </div>
                       </div>
                       {t.last_visit && (
@@ -658,12 +658,12 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                     </div>
 
                     {/* Кнопки действий */}
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleSnapshotForTeacher(t.teacher_id)}
                         disabled={processingTeacherId === t.teacher_id}
-                        className="flex-1 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-400 hover:text-sky-300 font-semibold text-[11px] transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                        className="flex-1 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 font-semibold text-[11px] transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                         title="Захватить чистый кадр с камеры и рассчитать биометрию"
                       >
                         {processingTeacherId === t.teacher_id ? (
@@ -678,7 +678,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                         type="button"
                         onClick={() => handleTriggerFileUpload(t.teacher_id)}
                         disabled={processingTeacherId === t.teacher_id}
-                        className="flex-1 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-indigo-400 hover:text-indigo-300 font-semibold text-[11px] transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                        className="flex-1 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-semibold text-[11px] transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                         title="Загрузить фото из файла на диске"
                       >
                         <Upload className="w-3.5 h-3.5" />
@@ -690,7 +690,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                           type="button"
                           onClick={() => handleDeleteBiometrics(t.teacher_id)}
                           disabled={processingTeacherId === t.teacher_id}
-                          className="p-1.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-700 text-slate-400 hover:text-rose-400 transition"
+                          className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-900 dark:hover:bg-rose-950/60 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition"
                           title="Удалить биометрию"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -711,19 +711,19 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
         {/* ПОДВКЛАДКА 3: ДАШБОРД СТАТИСТИКИ ИСПОЛЬЗОВАНИЯ */}
         {subTab === 'stats' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800/80">
               <div>
-                <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                   Статистика подходов и аналитика
                 </h4>
-                <div className="text-[11px] text-slate-400">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   Фиксации подходов преподавателей к камере и охват кафедры
                 </div>
               </div>
               <button
                 type="button"
                 onClick={loadStats}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>Обновить статистику</span>
@@ -732,19 +732,19 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
 
             {/* Виджеты ключевых показателей */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl">
-                <div className="text-slate-400 text-xs font-semibold">Подходов за сегодня</div>
-                <div className="text-3xl font-black text-white mt-1 font-mono">
+              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl">
+                <div className="text-slate-500 dark:text-slate-400 text-xs font-semibold">Подходов за сегодня</div>
+                <div className="text-3xl font-black text-slate-900 dark:text-white mt-1 font-mono">
                   {stats?.total_today ?? 0}
                 </div>
-                <div className="text-[11px] text-emerald-400 mt-1">
+                <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
                   Активных преподавателей: {stats?.active_teachers_today ?? 0} чел.
                 </div>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl">
-                <div className="text-slate-400 text-xs font-semibold">Подходов за 7 дней</div>
-                <div className="text-3xl font-black text-sky-400 mt-1 font-mono">
+              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl">
+                <div className="text-slate-500 dark:text-slate-400 text-xs font-semibold">Подходов за 7 дней</div>
+                <div className="text-3xl font-black text-sky-600 dark:text-sky-400 mt-1 font-mono">
                   {stats?.total_week ?? 0}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
@@ -752,9 +752,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 </div>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl">
-                <div className="text-slate-400 text-xs font-semibold">Всего визитов к экрану</div>
-                <div className="text-3xl font-black text-indigo-400 mt-1 font-mono">
+              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl">
+                <div className="text-slate-500 dark:text-slate-400 text-xs font-semibold">Всего визитов к экрану</div>
+                <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 mt-1 font-mono">
                   {stats?.total_all_time ?? 0}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
@@ -762,12 +762,12 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                 </div>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl">
-                <div className="text-slate-400 text-xs font-semibold">Охват биометрией кафедры</div>
-                <div className="text-3xl font-black text-emerald-400 mt-1 font-mono">
+              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl">
+                <div className="text-slate-500 dark:text-slate-400 text-xs font-semibold">Охват биометрией кафедры</div>
+                <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
                   {stats?.biometrics_coverage_pct ?? 0}%
                 </div>
-                <div className="text-[11px] text-slate-400 mt-1 truncate">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
                   Самый активный: {stats?.most_active_teacher || '—'}
                 </div>
               </div>
@@ -776,9 +776,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
             {/* Топ пользователей и журнал */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Топ преподавателей по подходам */}
-              <div className="lg:col-span-6 p-5 rounded-3xl bg-slate-950 border border-slate-800 shadow-xl space-y-4">
-                <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Users className="w-4 h-4 text-sky-400" />
+              <div className="lg:col-span-6 p-5 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Users className="w-4 h-4 text-sky-500 dark:text-sky-400" />
                   <span>Топ пользователей табло</span>
                 </h4>
 
@@ -787,20 +787,20 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                     stats.top_teachers.map((teacher, idx) => (
                       <div
                         key={teacher.teacher_id}
-                        className="p-3 rounded-2xl bg-slate-900 border border-slate-800/80 flex items-center justify-between shadow-sm"
+                        className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 flex items-center justify-between shadow-sm"
                       >
                         <div className="flex items-center gap-3">
-                          <span className="w-6 h-6 rounded-full bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center font-mono">
+                          <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center font-mono">
                             {idx + 1}
                           </span>
                           <div>
-                            <div className="text-xs font-bold text-white">{teacher.full_name}</div>
-                            <div className="text-[10px] text-slate-400">{teacher.cathedra_name || 'Кафедра'}</div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">{teacher.full_name}</div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">{teacher.cathedra_name || 'Кафедра'}</div>
                           </div>
                         </div>
 
                         <div className="text-right">
-                          <span className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 font-bold font-mono text-xs border border-sky-500/30">
+                          <span className="px-2.5 py-1 rounded-lg bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 font-bold font-mono text-xs border border-sky-300 dark:border-sky-500/30">
                             {teacher.visit_count} виз.
                           </span>
                           {teacher.last_visit && (
@@ -812,7 +812,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                       </div>
                     ))
                   ) : (
-                    <div className="py-8 text-center text-slate-600 text-xs">
+                    <div className="py-8 text-center text-slate-400 dark:text-slate-600 text-xs">
                       Записи фиксаций пока отсутствуют
                     </div>
                   )}
@@ -820,9 +820,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
               </div>
 
               {/* Последние события в журнале */}
-              <div className="lg:col-span-6 p-5 rounded-3xl bg-slate-950 border border-slate-800 shadow-xl space-y-4">
-                <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-indigo-400" />
+              <div className="lg:col-span-6 p-5 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                   <span>Журнал распознаваний (Кулдаун 30 сек)</span>
                 </h4>
 
@@ -831,19 +831,19 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                     stats.recent_logs.map((log) => (
                       <div
                         key={log.id}
-                        className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs"
+                        className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs"
                       >
                         <div>
-                          <div className="font-semibold text-white">{log.teacher_name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{log.recognized_at}</div>
+                          <div className="font-semibold text-slate-900 dark:text-white">{log.teacher_name}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{log.recognized_at}</div>
                         </div>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
                           {Math.round(log.confidence * 100)}%
                         </span>
                       </div>
                     ))
                   ) : (
-                    <div className="py-8 text-center text-slate-600 text-xs">
+                    <div className="py-8 text-center text-slate-400 dark:text-slate-600 text-xs">
                       Логи распознаваний пусты
                     </div>
                   )}

@@ -35,7 +35,7 @@ export const PairCard: React.FC<PairCardProps> = ({ event, teacherColor }) => {
 
   return (
     <div
-      className="relative flex flex-col justify-between p-2 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-slate-700 shadow-sm transition hover:shadow-md text-left h-full min-h-[96px] overflow-hidden group"
+      className="relative flex flex-col justify-between p-2 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm transition hover:shadow-md text-left h-full min-h-[96px] overflow-hidden group"
       style={{
         borderLeftWidth: '4px',
         borderLeftColor: teacherColor || '#3b82f6',
@@ -50,23 +50,23 @@ export const PairCard: React.FC<PairCardProps> = ({ event, teacherColor }) => {
             {event.event_type || event.event_type_alias || 'Пара'}
           </span>
 
-          <span className="flex items-center gap-1 text-[10px] font-medium text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded">
-            <MapPin className="w-2.5 h-2.5 text-slate-400" />
+          <span className="flex items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+            <MapPin className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500" />
             <span className="truncate max-w-[80px]">{roomText}</span>
           </span>
         </div>
 
         {/* Название предмета */}
-        <div className="flex items-start gap-1 font-medium text-xs text-slate-100 line-clamp-2 leading-tight">
-          <BookOpen className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-1 font-medium text-xs text-slate-900 dark:text-slate-100 line-clamp-2 leading-tight">
+          <BookOpen className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
           <span>{event.course_alias || event.course_title || event.course_name || 'Дисциплина'}</span>
         </div>
       </div>
 
       {/* Подвал: Преподаватель и Группа с цветом факультета */}
-      <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-        <div className="flex items-center gap-1 text-slate-300 truncate max-w-[120px]">
-          <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+      <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between text-[10px]">
+        <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate max-w-[120px]">
+          <User className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 shrink-0" />
           <span className="truncate">{teacherText}</span>
         </div>
 
