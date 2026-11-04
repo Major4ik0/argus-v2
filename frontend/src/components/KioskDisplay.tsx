@@ -11,11 +11,14 @@ import {
   Wifi,
   WifiOff,
   GraduationCap,
-  Eye,
   Camera,
-  Check,
   ChevronDown,
   ChevronUp,
+  Video,
+  GripVertical,
+  Sun,
+  Moon,
+  FlipHorizontal,
 } from 'lucide-react'
 import {
   fetchCarouselSchedule,
@@ -27,7 +30,9 @@ import type {
   TeacherWeeklySchedule,
   TeacherDepartmentSchedule,
   DepartmentFacultyLegend,
+  TeacherWeeklyLesson,
 } from '../types/schedule'
+import { renderGroupBadge } from '../utils/groupFormat'
 
 const DEFAULT_FACULTIES: DepartmentFacultyLegend[] = [
   { name: 'АСУ, РЭС', color: '#FFAAFF' },
@@ -36,14 +41,31 @@ const DEFAULT_FACULTIES: DepartmentFacultyLegend[] = [
   { name: 'ВВОТП', color: '#95E7FF' },
 ]
 
-const DAYS_OF_WEEK = [
-  { num: 1, name: 'Понедельник', short: 'ПН' },
-  { num: 2, name: 'Вторник', short: 'ВТ' },
-  { num: 3, name: 'Среда', short: 'СР' },
-  { num: 4, name: 'Четверг', short: 'ЧТ' },
-  { num: 5, name: 'Пятница', short: 'ПТ' },
-  { num: 6, name: 'Суббота', short: 'СБ' },
+// 7 дней недели: 1 - Пн ... 6 - Сб, 7 - Воскресенье (Выходной)
+const BASE_DAYS = [
+  { id: 1, name: 'Понедельник', short: 'ПН', isWeekend: false },
+  { id: 2, name: 'Вторник', short: 'ВТ', isWeekend: false },
+  { id: 3, name: 'Среда', short: 'СР', isWeekend: false },
+  { id: 4, name: 'Четверг', short: 'ЧТ', isWeekend: false },
+  { id: 5, name: 'Пятница', short: 'ПТ', isWeekend: false },
+  { id: 6, name: 'Суббота', short: 'СБ', isWeekend: false },
+  { id: 7, name: 'Воскресенье', short: 'ВС', isWeekend: true },
 ]
+
+// Поиск пары по id дня недели (1..7) и номеру пары (1..4)
+// ВАЖНО: l.lesson_num исключен из поиска номера пары, чтобы не путать тему занятия (КР 1) с номером пары
+const findLesson = (
+  lessons: TeacherWeeklyLesson[] | undefined,
+  dayId: number,
+  periodNum: number
+): TeacherWeeklyLesson | undefined => {
+  if (!lessons || !Array.isArray(lessons)) return undefined
+  return lessons.find((l: any) => {
+    const lDow = Number(l.day_of_week ?? l.day ?? l.nday)
+    const lPair = Number(l.pair_number ?? l.period_num ?? l.pair)
+    return lDow === dayId && lPair === periodNum
+  })
+}
 
 const PAIR_ROWS = [
   { num: 1, name: '1-2', time: '09:00 - 10:35' },
@@ -59,18 +81,54 @@ export const KioskDisplay: React.FC = () => {
   // Режим экрана: 'carousel' (общая сводка) или 'teacher' (личный диалог DialogNeiroSet)
   const [mode, setMode] = useState<'carousel' | 'teacher'>('carousel')
 
+  // Независимая тема инфотабло: 'light' | 'dark'
+  const [kioskTheme, setKioskTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('kiosk_theme') as 'light' | 'dark') || 'light'
+  })
+
+  // Зеркальное отображение камеры
+  const [isCameraFlipped, setIsCameraFlipped] = useState<boolean>(() => {
+    return localStorage.getItem('kiosk_camera_flip') === 'true'
+  })
+
+  useEffect(() => {
+    if (kioskTheme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [kioskTheme])
+
+  const toggleCameraFlip = () => {
+    const next = !isCameraFlipped
+    setIsCameraFlipped(next)
+    localStorage.setItem('kiosk_camera_flip', String(next))
+    fetch('/api/v1/kiosk/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ camera_flip: next }),
+    }).catch(() => {})
+  }
+
   // Данные расписания кафедры
   const [carouselData, setCarouselData] = useState<CarouselSchedule | null>(null)
+  const [photoKey, setPhotoKey] = useState<number>(Date.now())
 
   // Персональные данные преподавателя (DialogNeiroSet.ui)
   const [activeTeacherSchedule, setActiveTeacherSchedule] = useState<TeacherWeeklySchedule | null>(null)
   const [teacherGreeting, setTeacherGreeting] = useState<string>('')
   const [recognitionConfidence, setRecognitionConfidence] = useState<number>(0)
-  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false)
-  const [timerSeconds, setTimerSeconds] = useState<number>(20)
-  const [maxTimerSeconds, setMaxTimerSeconds] = useState<number>(20)
 
-  // Видеоаналитика (боковая панель для 2xl)
+  // Непрерывное распознавание: флаг присутствия преподавателя перед камерой
+  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false)
+  // Плавный обратный отсчет ухода (5 секунд) перед скрытием расписания
+  const [departureCountdown, setDepartureCountdown] = useState<number | null>(null)
+  const departureTimerRef = useRef<any>(null)
+
+  const [timerSeconds, setTimerSeconds] = useState<number>(15)
+  const [maxTimerSeconds, setMaxTimerSeconds] = useState<number>(15)
+
+  // Последний распознанный преподаватель
   const [lastRecognizedTeacher, setLastRecognizedTeacher] = useState<{
     full_name: string
     academic_degree?: string
@@ -80,11 +138,33 @@ export const KioskDisplay: React.FC = () => {
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false)
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
 
+  // Плавающее перетаскиваемое окно видеокамеры (работает на любых экранах: ноутбук, монитор, киоск)
+  const [isVideoFloatingOpen, setIsVideoFloatingOpen] = useState<boolean>(() => {
+    return localStorage.getItem('kiosk_show_video') === 'true'
+  })
+  const [videoPos, setVideoPos] = useState<{ x: number; y: number }>(() => {
+    const saved = localStorage.getItem('kiosk_video_pos')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {}
+    }
+    const defX = typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 350) : 950
+    return { x: defX, y: 76 }
+  })
+  const [isDragging, setIsDragging] = useState<boolean>(false)
+  const dragStartRef = useRef<{ startX: number; startY: number; posX: number; posY: number }>({
+    startX: 0,
+    startY: 0,
+    posX: 0,
+    posY: 0,
+  })
+
   // Плавная пошаговая прокрутка таблицы
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isPaused, setIsPaused] = useState<boolean>(false)
   const pauseTimeoutRef = useRef<any>(null)
-  const timerRef = useRef<any>(null)
+  const manualTimerRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   // 1. Часы реального времени
@@ -95,7 +175,7 @@ export const KioskDisplay: React.FC = () => {
     return () => clearInterval(clockTimer)
   }, [])
 
-  // 2. Загрузка настроек и расписания кафедры
+  // 2. Загрузка настроек темы и расписания кафедры
   const loadKioskData = async () => {
     try {
       const [settings, sched] = await Promise.all([
@@ -106,6 +186,7 @@ export const KioskDisplay: React.FC = () => {
         setMaxTimerSeconds(settings.idle_timeout)
       }
       setCarouselData(sched)
+      setPhotoKey(Date.now())
     } catch (err) {
       console.error('Ошибка загрузки данных инфотабло:', err)
     }
@@ -113,6 +194,28 @@ export const KioskDisplay: React.FC = () => {
 
   useEffect(() => {
     loadKioskData()
+    // Синхронизация темы инфотабло с бэкенда
+    fetch('/api/v1/admin/settings')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.kiosk_theme) {
+          setKioskTheme(data.kiosk_theme)
+          localStorage.setItem('kiosk_theme', data.kiosk_theme)
+        }
+      })
+      .catch(() => {})
+
+    // Синхронизация настроек камеры
+    fetch('/api/v1/kiosk/settings')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && typeof data.camera_flip === 'boolean') {
+          setIsCameraFlipped(data.camera_flip)
+          localStorage.setItem('kiosk_camera_flip', String(data.camera_flip))
+        }
+      })
+      .catch(() => {})
+
     const refreshInterval = setInterval(loadKioskData, 5 * 60 * 1000)
     return () => clearInterval(refreshInterval)
   }, [])
@@ -122,7 +225,21 @@ export const KioskDisplay: React.FC = () => {
     return carouselData?.department_teachers || []
   }, [carouselData])
 
-  // 3. Аккуратная пошаговая прокрутка строго по одной строке преподавателя (rowHeight = 110)
+  // Определяем сегодняшний день недели (1..7, где 7 - Воскресенье)
+  const todayJs = currentTime.getDay() // 0 - Вс, 1 - Пн ... 6 - Сб
+  const currentDayId = todayJs === 0 ? 7 : todayJs
+
+  // 3. Циклический сдвиг массива 7 дней недели, начиная со СЕГОДНЯШНЕГО дня:
+  const orderedDays = useMemo(() => {
+    const startIndex = BASE_DAYS.findIndex((d) => d.id === currentDayId)
+    if (startIndex === -1) return BASE_DAYS
+    return [
+      ...BASE_DAYS.slice(startIndex),
+      ...BASE_DAYS.slice(0, startIndex),
+    ]
+  }, [currentDayId])
+
+  // 4. Аккуратная пошаговая прокрутка строго по одному преподавателю
   useEffect(() => {
     if (mode !== 'carousel') return
     if (isPaused) return
@@ -131,7 +248,8 @@ export const KioskDisplay: React.FC = () => {
     const scrollInterval = setInterval(() => {
       if (!scrollRef.current) return
       const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
-      const rowHeight = 110 // фиксированная высота строки преподавателя
+      const firstBlock = scrollRef.current.querySelector('tbody') as HTMLElement | null
+      const teacherBlockHeight = firstBlock ? firstBlock.offsetHeight : 300
 
       if (scrollTop + clientHeight >= scrollHeight - 10) {
         // Дошли до конца — пауза 3 секунды и плавный возврат наверх
@@ -139,14 +257,14 @@ export const KioskDisplay: React.FC = () => {
           scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
         }, 3000)
       } else {
-        scrollRef.current.scrollBy({ top: rowHeight, behavior: 'smooth' })
+        scrollRef.current.scrollBy({ top: teacherBlockHeight, behavior: 'smooth' })
       }
-    }, 4500)
+    }, 5500)
 
     return () => clearInterval(scrollInterval)
   }, [mode, isPaused, teachersList.length])
 
-  // Приостановка автопрокрутки на 15 секунд при взаимодействии пользователя
+  // Приостановка автопрокрутки на 15 секунд при ручном взаимодействии пользователя
   const handleUserInteraction = () => {
     setIsPaused(true)
     if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current)
@@ -155,27 +273,47 @@ export const KioskDisplay: React.FC = () => {
     }, 15000)
   }
 
-  // Ручные кнопки прокрутки на одну строку
+  // Ручные кнопки прокрутки на один блок преподавателя
   const handleScrollStep = (direction: 'up' | 'down') => {
     handleUserInteraction()
     if (!scrollRef.current) return
-    const rowHeight = 110
+    const firstBlock = scrollRef.current.querySelector('tbody') as HTMLElement | null
+    const teacherBlockHeight = firstBlock ? firstBlock.offsetHeight : 300
     scrollRef.current.scrollBy({
-      top: direction === 'down' ? rowHeight : -rowHeight,
+      top: direction === 'down' ? teacherBlockHeight : -teacherBlockHeight,
       behavior: 'smooth',
     })
   }
 
-  // 4. Показ персонального расписания преподавателя при распознавании лицом
-  const handleTeacherDetected = async (teacherId: number, teacherName: string, confidence: number) => {
+  // 5. Обработка распознавания лица с камеры
+  const handleTeacherDetected = async (
+    teacherId: number,
+    teacherName: string,
+    confidence: number
+  ) => {
+    // Отменяем таймер ухода, так как преподаватель снова перед экраном
+    if (departureTimerRef.current) {
+      clearInterval(departureTimerRef.current)
+      departureTimerRef.current = null
+    }
+    setDepartureCountdown(null)
+    setIsFaceDetected(true)
+    setRecognitionConfidence(confidence)
+    setLastRecognizedTeacher({
+      full_name: teacherName,
+      academic_degree: activeTeacherSchedule?.academic_degree,
+    })
+
+    // Если этот преподаватель уже отображается, не перегружаем повторно экран
+    if (mode === 'teacher' && activeTeacherSchedule?.teacher_id === teacherId) {
+      return
+    }
+
     try {
       const schedule = await fetchTeacherWeeklySchedule(teacherId)
       if (schedule.success) {
         setActiveTeacherSchedule(schedule)
         setTeacherGreeting(`Здравствуйте, ${teacherName}!`)
-        setRecognitionConfidence(confidence)
-        setIsFaceDetected(true)
-        setTimerSeconds(maxTimerSeconds)
         setLastRecognizedTeacher({
           full_name: teacherName,
           academic_degree: schedule.academic_degree,
@@ -187,9 +325,37 @@ export const KioskDisplay: React.FC = () => {
     }
   }
 
-  // 5. Показ расписания преподавателя по клику на строку в таблице
+  // 6. Преподаватель отошел от экрана: запуск плавного 5-секундного таймера закрытия
+  const handleTeacherDeparted = () => {
+    setIsFaceDetected(false)
+    if (mode !== 'teacher') return
+
+    // Запускаем 5-секундный таймер плавного возврата к общему табло
+    setDepartureCountdown(5)
+    if (departureTimerRef.current) clearInterval(departureTimerRef.current)
+    departureTimerRef.current = setInterval(() => {
+      setDepartureCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          if (departureTimerRef.current) {
+            clearInterval(departureTimerRef.current)
+            departureTimerRef.current = null
+          }
+          setMode('carousel')
+          setActiveTeacherSchedule(null)
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  // 7. Показ расписания преподавателя по клику на карточку в таблице
   const handleTeacherSelect = (t: TeacherDepartmentSchedule) => {
     handleUserInteraction()
+    if (departureTimerRef.current) clearInterval(departureTimerRef.current)
+    setDepartureCountdown(null)
+    setIsFaceDetected(false) // Ручной выбор мышкой
+
     setActiveTeacherSchedule({
       success: true,
       teacher_id: t.teacher_id,
@@ -203,7 +369,6 @@ export const KioskDisplay: React.FC = () => {
     })
     setTeacherGreeting(t.academic_degree ? `${t.academic_degree} ${t.full_name}` : t.full_name)
     setRecognitionConfidence(1.0)
-    setIsFaceDetected(false)
     setTimerSeconds(maxTimerSeconds)
     setLastRecognizedTeacher({
       full_name: t.full_name,
@@ -211,7 +376,6 @@ export const KioskDisplay: React.FC = () => {
     })
     setMode('teacher')
 
-    // Запрашиваем обновленные данные для полноты
     fetchTeacherWeeklySchedule(t.teacher_id)
       .then((fresh) => {
         if (fresh?.success && fresh.lessons) {
@@ -221,58 +385,27 @@ export const KioskDisplay: React.FC = () => {
       .catch(() => {})
   }
 
-  // 6. Имитация распознавания лица (тест: Костров А.С.)
-  const handleTestRecognition = async () => {
-    const targetTeacher =
-      teachersList.find(
-        (t) =>
-          t.full_name.toLowerCase().includes('костров') ||
-          t.full_name.toLowerCase().includes('костр')
-      ) || teachersList[0]
-
-    if (targetTeacher) {
-      await handleTeacherDetected(
-        targetTeacher.teacher_id,
-        targetTeacher.academic_degree
-          ? `${targetTeacher.academic_degree} ${targetTeacher.full_name}`
-          : targetTeacher.full_name,
-        0.96
-      )
-    } else {
-      setActiveTeacherSchedule({
-        success: true,
-        teacher_id: 1,
-        teacher_name: 'Костров А.С.',
-        academic_degree: 'п/п-к',
-        cathedra_name: 'Кафедра АСУ',
-        photo_url: undefined,
-        week_name: carouselData?.week_name || 'Текущая учебная неделя',
-        lessons: [],
-        total_lessons: 0,
-      })
-      setTeacherGreeting('Здравствуйте, п/п-к Костров А.С.!')
-      setRecognitionConfidence(0.96)
-      setIsFaceDetected(true)
-      setTimerSeconds(maxTimerSeconds)
-      setLastRecognizedTeacher({
-        full_name: 'Костров А.С.',
-        academic_degree: 'п/п-к',
-      })
-      setMode('teacher')
-    }
+  // Ручное закрытие персонального расписания
+  const handleDismissTeacherView = () => {
+    if (departureTimerRef.current) clearInterval(departureTimerRef.current)
+    if (manualTimerRef.current) clearInterval(manualTimerRef.current)
+    setDepartureCountdown(null)
+    setIsFaceDetected(false)
+    setMode('carousel')
+    setActiveTeacherSchedule(null)
   }
 
-  // 7. Таймер обратного отсчета при просмотре личного расписания
+  // Таймер обратного отсчета для ручного выбора (когда открыто кликом)
   useEffect(() => {
-    if (mode !== 'teacher') {
-      if (timerRef.current) clearInterval(timerRef.current)
+    if (mode !== 'teacher' || isFaceDetected) {
+      if (manualTimerRef.current) clearInterval(manualTimerRef.current)
       return
     }
 
-    timerRef.current = setInterval(() => {
+    manualTimerRef.current = setInterval(() => {
       setTimerSeconds((prev) => {
         if (prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current)
+          if (manualTimerRef.current) clearInterval(manualTimerRef.current)
           setMode('carousel')
           setActiveTeacherSchedule(null)
           return 0
@@ -282,15 +415,9 @@ export const KioskDisplay: React.FC = () => {
     }, 1000)
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
+      if (manualTimerRef.current) clearInterval(manualTimerRef.current)
     }
-  }, [mode])
-
-  const handleDismissTeacherView = () => {
-    if (timerRef.current) clearInterval(timerRef.current)
-    setMode('carousel')
-    setActiveTeacherSchedule(null)
-  }
+  }, [mode, isFaceDetected])
 
   // 8. WebSocket подключение для детекции лиц с камеры
   useEffect(() => {
@@ -322,9 +449,18 @@ export const KioskDisplay: React.FC = () => {
             if (data.event === 'CONNECTED') {
               setIsWsConnected(true)
             } else if (data.event === 'TEACHER_DETECTED') {
-              handleTeacherDetected(data.teacher_id, data.teacher_name, data.confidence || 0.95)
+              handleTeacherDetected(
+                data.teacher_id,
+                data.teacher_name,
+                data.confidence || 0.95
+              )
             } else if (data.event === 'TIMEOUT_EXPIRED') {
-              handleDismissTeacherView()
+              handleTeacherDeparted()
+            } else if (data.event === 'THEME_CHANGED') {
+              if (data.kiosk_theme) {
+                setKioskTheme(data.kiosk_theme)
+                localStorage.setItem('kiosk_theme', data.kiosk_theme)
+              }
             }
           } catch {
             // Игнорируем технические пакеты (pong и т.д.)
@@ -356,7 +492,7 @@ export const KioskDisplay: React.FC = () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
       if (ws) ws.close()
     }
-  }, [maxTimerSeconds])
+  }, [maxTimerSeconds, mode, activeTeacherSchedule?.teacher_id])
 
   // Полноэкранный режим
   const toggleFullscreen = () => {
@@ -365,6 +501,49 @@ export const KioskDisplay: React.FC = () => {
     } else {
       document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
     }
+  }
+
+  // Перетаскивание плавающего окна видеокамеры (Pointer Events)
+  const handleVideoPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setIsDragging(true)
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      posX: videoPos.x,
+      posY: videoPos.y,
+    }
+  }
+
+  const handleVideoPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return
+    const dx = e.clientX - dragStartRef.current.startX
+    const dy = e.clientY - dragStartRef.current.startY
+    const newX = Math.max(8, Math.min(window.innerWidth - 330, dragStartRef.current.posX + dx))
+    const newY = Math.max(8, Math.min(window.innerHeight - 260, dragStartRef.current.posY + dy))
+    setVideoPos({ x: newX, y: newY })
+  }
+
+  const handleVideoPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDragging) {
+      setIsDragging(false)
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      } catch {}
+      localStorage.setItem('kiosk_video_pos', JSON.stringify(videoPos))
+    }
+  }
+
+  // Переключение независимой темы табло
+  const toggleKioskTheme = () => {
+    const next = kioskTheme === 'dark' ? 'light' : 'dark'
+    setKioskTheme(next)
+    localStorage.setItem('kiosk_theme', next)
+    fetch('/api/v1/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kiosk_theme: next }),
+    }).catch(() => {})
   }
 
   // Форматирование даты
@@ -386,54 +565,81 @@ export const KioskDisplay: React.FC = () => {
       ? carouselData.faculties
       : DEFAULT_FACULTIES
 
-  // Текущий день недели (1..6)
-  const todayDow = currentTime.getDay() === 0 ? 7 : currentTime.getDay()
+  const isDark = kioskTheme === 'dark'
 
   return (
-    <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col select-none overflow-hidden font-sans">
+    <div
+      className={`fixed inset-0 w-screen h-screen flex flex-col select-none overflow-hidden font-sans transition-colors duration-200 ${
+        isDark ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
+      }`}
+    >
       {/* ================= ВЕРХНЯЯ ШАПКА ТАБЛО ================= */}
-      <header className="h-20 bg-slate-900/95 border-b border-slate-800/90 px-6 flex items-center justify-between shrink-0 shadow-lg relative z-20">
+      <header
+        className={`h-14 2xl:h-16 px-3 2xl:px-6 flex items-center justify-between shrink-0 shadow-sm relative z-20 border-b ${
+          isDark
+            ? 'bg-slate-900 border-slate-800 text-white'
+            : 'bg-white border-slate-300 text-slate-900'
+        }`}
+      >
         {/* Логотип и проект */}
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-sky-500/20 border border-sky-400/30">
-            <Sparkles className="w-6 h-6 text-white animate-pulse" />
+        <div className="flex items-center gap-2.5 2xl:gap-3.5">
+          <div className="w-9 h-9 2xl:w-11 2xl:h-11 rounded-xl bg-gradient-to-br from-sky-500 via-indigo-600 to-purple-600 flex items-center justify-center shadow-sm border border-sky-400/40">
+            <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-black tracking-wider bg-gradient-to-r from-sky-400 via-indigo-200 to-purple-300 bg-clip-text text-transparent">
+            <div className="flex items-center gap-1.5 2xl:gap-2">
+              <span className="text-lg 2xl:text-xl font-black tracking-wider">
                 АРГУС
               </span>
-              <span className="px-2 py-0.5 rounded text-[11px] font-black bg-sky-500/20 text-sky-300 border border-sky-500/40 uppercase tracking-widest">
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] 2xl:text-[11px] font-black uppercase tracking-widest ${
+                  isDark
+                    ? 'bg-sky-950/80 text-sky-300 border border-sky-800'
+                    : 'bg-sky-100 text-sky-800 border border-sky-300'
+                }`}
+              >
                 ТАБЛО КАФЕДРЫ
               </span>
             </div>
-            <div className="text-xs text-slate-400 font-medium">
+            <div
+              className={`text-[10px] 2xl:text-xs font-medium truncate max-w-[240px] sm:max-w-none ${
+                isDark ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
               {carouselData?.cathedra_title || 'Расписание занятий преподавателей кафедры'}
             </div>
           </div>
         </div>
 
-        {/* Неделя, статус сети, кнопка теста и часы */}
-        <div className="flex items-center gap-5">
-          <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs shadow-inner">
-            <Calendar className="w-4 h-4 text-sky-400" />
-            <span className="font-bold text-slate-200">
-              {carouselData?.week_name || 'Текущая учебная неделя'}
-            </span>
+        {/* Неделя, статус сети, кнопка камеры, темы и часы */}
+        <div className="flex items-center gap-2 2xl:gap-3">
+          <div
+            className={`hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold shadow-sm border ${
+              isDark
+                ? 'bg-slate-800 border-slate-700 text-slate-300'
+                : 'bg-slate-50 border-slate-300 text-slate-700'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5 text-sky-500" />
+            <span>{carouselData?.week_name || 'Текущая учебная неделя'}</span>
           </div>
 
           {/* Индикатор WebSocket камеры */}
           <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] 2xl:text-[11px] font-bold border transition ${
               isWsConnected
-                ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20'
-                : 'bg-rose-950/50 border-rose-500/40 text-rose-400'
+                ? isDark
+                  ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+                  : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                : isDark
+                ? 'bg-rose-950/40 border-rose-800 text-rose-300'
+                : 'bg-rose-50 border-rose-300 text-rose-800'
             }`}
             title={isWsConnected ? 'Видеоаналитика активна' : 'Поиск сети / Переподключение...'}
           >
             <span className="relative flex h-2 w-2">
               {isWsConnected && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
               )}
               <span
                 className={`relative inline-flex rounded-full h-2 w-2 ${
@@ -441,28 +647,58 @@ export const KioskDisplay: React.FC = () => {
                 }`}
               ></span>
             </span>
-            {isWsConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5 animate-pulse" />}
-            <span>{isWsConnected ? 'Табло в сети' : 'Поиск сети'}</span>
+            {isWsConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3 animate-pulse" />}
+            <span className="hidden sm:inline">{isWsConnected ? 'Камера активна' : 'Поиск сети'}</span>
           </div>
 
-          {/* Кнопка быстрого тестирования: Подошел Костров А.С. */}
+          {/* Кнопка переключения плавающего окна камеры (для ноутбуков и мониторов) */}
           <button
             type="button"
-            onClick={handleTestRecognition}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-sky-600/30 to-indigo-600/30 hover:from-amber-500/30 hover:via-sky-600/40 hover:to-indigo-600/50 border border-amber-400/50 text-amber-200 hover:text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-            title="Имитация события распознавания преподавателя Кострова А.С."
+            onClick={() => {
+              setIsVideoFloatingOpen((prev) => {
+                const next = !prev
+                localStorage.setItem('kiosk_show_video', String(next))
+                return next
+              })
+            }}
+            className={`px-2.5 py-1 2xl:py-1.5 rounded-lg text-[10px] 2xl:text-xs font-bold transition flex items-center gap-1.5 border shadow-sm ${
+              isVideoFloatingOpen
+                ? 'bg-sky-600 text-white border-sky-500'
+                : isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+            }`}
+            title="Открыть или скрыть плавающее окно живого видео с камеры"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-            <span>Тест: Подошел Костров А.С.</span>
+            <Video className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">{isVideoFloatingOpen ? 'Камера открыта' : 'Видеокамера'}</span>
+          </button>
+
+          {/* Переключатель темы табло (Светлая / Темная) */}
+          <button
+            type="button"
+            onClick={toggleKioskTheme}
+            className={`p-1.5 2xl:p-2 rounded-lg border transition shadow-sm ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-sky-700 border-slate-300'
+            }`}
+            title={`Переключить тему табло (сейчас: ${isDark ? 'Темная' : 'Светлая'})`}
+          >
+            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
           {/* Часы и дата */}
-          <div className="text-right pl-2 border-l border-slate-800">
-            <div className="text-2xl font-black font-mono tracking-tight text-white flex items-center gap-2 justify-end">
-              <Clock className="w-5 h-5 text-sky-400" />
+          <div className={`text-right pl-2 border-l ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+            <div className="text-base 2xl:text-xl font-black font-mono tracking-tight flex items-center gap-1.5 justify-end">
+              <Clock className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 text-sky-500" />
               <span>{timeFormatted}</span>
             </div>
-            <div className="text-[11px] text-slate-400 capitalize font-medium">
+            <div
+              className={`text-[10px] 2xl:text-[11px] capitalize font-medium hidden sm:block ${
+                isDark ? 'text-slate-400' : 'text-slate-500'
+              }`}
+            >
               {dateFormatted}
             </div>
           </div>
@@ -471,386 +707,493 @@ export const KioskDisplay: React.FC = () => {
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/60"
+            className={`p-1.5 2xl:p-2 rounded-lg transition border ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+            }`}
             title="Полноэкранный режим (F11)"
           >
-            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
         </div>
       </header>
 
       {/* ================= ОСНОВНАЯ ЗОНА ОТОБРАЖЕНИЯ ================= */}
-      <main className="flex-1 p-3 overflow-hidden relative flex flex-row gap-3">
+      <main className="flex-1 min-h-0 w-full p-2 2xl:p-3 overflow-hidden flex flex-row gap-2 2xl:gap-3">
         {mode === 'carousel' ? (
-          /* ================= РЕЖИМ 1: СВОДНАЯ СЕТКА РАСПИСАНИЯ ПО ORGANIZE.UI ================= */
-          <div className="flex-1 flex flex-col rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden shadow-2xl backdrop-blur-sm animate-fadeIn min-w-0">
+          /* ================= РЕЖИМ 1: СВОДНАЯ СЕТКА РАСПИСАНИЯ ПО ORGANIZE.UI (ВЕРТИКАЛЬНЫЕ ПАРЫ) ================= */
+          <div
+            className={`flex-1 min-h-0 w-full flex flex-col rounded-xl 2xl:rounded-2xl border overflow-hidden shadow-sm ${
+              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
+            }`}
+          >
             {/* Панель статуса и ручной навигации по строкам */}
-            <div className="h-10 px-4 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
-              <div className="flex items-center gap-3">
-                <span className="font-extrabold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Building className="w-4 h-4" />
-                  Расписание преподавателей кафедры
+            <div
+              className={`h-8 2xl:h-9 px-3 border-b flex items-center justify-between text-[11px] 2xl:text-xs shrink-0 ${
+                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="font-extrabold uppercase tracking-wider flex items-center gap-1.5 text-sky-500">
+                  <Building className="w-3.5 h-3.5" />
+                  <span>Расписание преподавателей кафедры</span>
                 </span>
-                <span className="text-slate-500">•</span>
-                <span className="text-slate-400">
-                  Всего преподавателей: <strong className="text-white">{teachersList.length}</strong>
+                <span className={isDark ? 'text-slate-600' : 'text-slate-400'}>•</span>
+                <span className={`font-medium ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Всего: <strong className={isDark ? 'text-white' : 'text-slate-900'}>{teachersList.length}</strong>
                 </span>
                 {isPaused && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    Автопрокрутка на паузе (15 с)
+                  <span className="px-1.5 py-0.2 rounded text-[9px] 2xl:text-[10px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30">
+                    Пауза (15 с)
                   </span>
                 )}
               </div>
 
-              {/* Кнопки ручного сдвига на 1 строку */}
-              <div className="flex items-center gap-2">
-                <span className="text-slate-400 text-[11px] hidden sm:inline">Смещение:</span>
+              {/* Кнопки ручного сдвига на 1 блок преподавателя */}
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] hidden sm:inline ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Смещение:
+                </span>
                 <button
                   type="button"
                   onClick={() => handleScrollStep('up')}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                  className={`p-1 rounded transition border ${
+                    isDark
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
                   title="Сдвиг вверх на 1 преподавателя"
                 >
-                  <ChevronUp className="w-3.5 h-3.5" />
+                  <ChevronUp className="w-3 h-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleScrollStep('down')}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                  className={`p-1 rounded transition border ${
+                    isDark
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
                   title="Сдвиг вниз на 1 преподавателя"
                 >
-                  <ChevronDown className="w-3.5 h-3.5" />
+                  <ChevronDown className="w-3 h-3" />
                 </button>
               </div>
             </div>
 
-            {/* Сводная таблица кафедры с горизонтальной и вертикальной прокруткой */}
+            {/* Сводная таблица кафедры: Преподаватель (узкая колонка), Пара, 7 дней со старта от сегодня */}
             <div
-              className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden"
-              onMouseEnter={handleUserInteraction}
-              onMouseMove={handleUserInteraction}
-              onTouchStart={handleUserInteraction}
+              ref={scrollRef}
+              onMouseEnter={() => setIsPaused(true)}
+              onMouseLeave={() => setIsPaused(false)}
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative custom-scrollbar"
             >
-              {/* Контейнер таблицы: min-w-[3050px] чтобы каждая из 24 пар была >= 115px */}
-              <div className="min-w-[3050px] flex-1 flex flex-col h-full">
-                {/* Шапка дней недели и пар (фиксированная сверху) */}
-                <div className="grid grid-cols-[240px_repeat(6,minmax(460px,1fr))] bg-slate-950/95 border-b-2 border-slate-800 text-xs font-bold text-center shrink-0 sticky top-0 z-20">
-                  {/* Угловая ячейка: Ф.И.О / Преподаватель (липкая слева) */}
-                  <div className="w-60 min-w-[240px] p-2 border-r border-slate-800 flex items-center justify-center text-slate-300 font-black tracking-wider uppercase text-[11px] sticky left-0 z-30 bg-slate-950/95 backdrop-blur-md shadow-md">
-                    Преподаватель
-                  </div>
-
-                  {/* 6 дней недели (ПН - СБ) */}
-                  {DAYS_OF_WEEK.map((day) => {
-                    const isToday = todayDow === day.num
-                    return (
-                      <div
-                        key={day.num}
-                        className={`border-r last:border-r-0 border-slate-800 flex flex-col transition ${
-                          isToday ? 'bg-sky-950/40 text-sky-300' : 'text-slate-300'
-                        }`}
-                      >
-                        {/* Название дня недели */}
-                        <div
-                          className={`py-1 text-center font-black tracking-wide border-b border-slate-800/80 ${
-                            isToday ? 'text-sky-300 bg-sky-600/20' : 'text-slate-200 bg-slate-900/60'
+              <table className="w-full border-collapse text-left">
+                {/* Фиксированная шапка таблицы */}
+                <thead
+                  className={`sticky top-0 z-10 border-b shadow-sm ${
+                    isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
+                  }`}
+                >
+                  <tr>
+                    {/* 1. Колонка преподавателя: компактная ширина */}
+                    <th
+                      className={`w-24 min-w-[92px] max-w-[100px] 2xl:w-28 2xl:min-w-[108px] 2xl:max-w-[120px] p-1 2xl:p-1.5 text-center text-[10px] 2xl:text-xs font-black uppercase tracking-wider border-r ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
+                      }`}
+                    >
+                      Преподаватель
+                    </th>
+                    {/* 2. Колонка пары */}
+                    <th
+                      className={`w-14 min-w-[56px] 2xl:w-16 2xl:min-w-[64px] p-1.5 2xl:p-2 text-center text-[10px] 2xl:text-xs font-black uppercase tracking-wider border-r ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
+                      }`}
+                    >
+                      Пара
+                    </th>
+                    {/* 3-9. 7 дней недели (начиная со СЕГОДНЯШНЕГО дня!) */}
+                    {orderedDays.map((day) => {
+                      const isToday = currentDayId === day.id
+                      return (
+                        <th
+                          key={day.id}
+                          className={`p-1.5 2xl:p-2 text-center border-r last:border-r-0 transition ${
+                            isDark
+                              ? isToday
+                                ? 'bg-sky-950/60 text-sky-300 border-b-2 border-b-sky-500 border-r-slate-800'
+                                : day.isWeekend
+                                ? 'bg-rose-950/30 text-rose-300 border-r-slate-800'
+                                : 'bg-slate-900 text-slate-200 border-r-slate-800'
+                              : isToday
+                              ? 'bg-sky-50 text-sky-900 border-b-2 border-b-sky-500 border-r-slate-300'
+                              : day.isWeekend
+                              ? 'bg-rose-50/60 text-rose-800 border-r-slate-300'
+                              : 'bg-slate-100 text-slate-800 border-r-slate-300'
                           }`}
                         >
-                          <span>{day.name}</span>
-                          {isToday && (
-                            <span className="ml-1 text-[10px] text-amber-300 font-bold">(Сегодня)</span>
-                          )}
-                        </div>
-
-                        {/* 4 пары внутри дня: 1-2, 3-4, 5-6, 7-8 (каждая >= 115px) */}
-                        <div className="grid grid-cols-4 divide-x divide-slate-800/80 text-[10px] py-1 bg-slate-950/70 text-slate-400 font-mono">
-                          <div className="min-w-[115px]">1-2</div>
-                          <div className="min-w-[115px]">3-4</div>
-                          <div className="min-w-[115px]">5-6</div>
-                          <div className="min-w-[115px]">7-8</div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Строки преподавателей: скроллируемый контейнер с плавной пошаговой автопрокруткой */}
-                <div
-                  ref={scrollRef}
-                  onScroll={handleUserInteraction}
-                  className="flex-1 overflow-y-auto divide-y divide-slate-800/80 scroll-smooth"
-                >
-                  {teachersList.length > 0 ? (
-                    teachersList.map((teacher, tIdx) => (
-                      <div
-                        key={teacher.teacher_id}
-                        onClick={() => handleTeacherSelect(teacher)}
-                        className={`grid grid-cols-[240px_repeat(6,minmax(460px,1fr))] min-h-[110px] h-[110px] transition cursor-pointer group ${
-                          tIdx % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-900/20'
-                        } hover:bg-indigo-950/30`}
-                      >
-                        {/* Колонка преподавателя: sticky left-0 z-10 */}
-                        <div className="w-60 min-w-[240px] p-2.5 bg-slate-900/90 border-r border-slate-800 flex items-center justify-between gap-2.5 overflow-hidden sticky left-0 z-10 backdrop-blur-md shadow-md">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
-                              {teacher.photo_url ? (
-                                <img
-                                  src={teacher.photo_url}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <User className="w-4 h-4 text-sky-400" />
-                              )}
-                            </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[10px] uppercase font-bold text-sky-400 tracking-wider leading-tight">
-                                {teacher.rank || teacher.academic_degree || 'Преподаватель'}
+                          <div className="flex items-center justify-center gap-1.5 font-black text-[10px] 2xl:text-xs uppercase tracking-wider">
+                            <span>{day.name}</span>
+                            {isToday && (
+                              <span className="px-1.5 py-0.2 rounded text-[8px] 2xl:text-[9px] bg-amber-400 text-slate-950 font-black uppercase tracking-wider shadow-sm">
+                                Сегодня
                               </span>
-                              <span className="text-xs font-semibold text-slate-100 leading-snug break-words">
-                                {teacher.full_name}
+                            )}
+                            {day.isWeekend && !isToday && (
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[8px] 2xl:text-[9px] font-bold ${
+                                  isDark ? 'bg-rose-900/50 text-rose-300' : 'bg-rose-100 text-rose-700'
+                                }`}
+                              >
+                                Выходной
                               </span>
-                            </div>
+                            )}
                           </div>
+                        </th>
+                      )
+                    })}
+                  </tr>
+                </thead>
 
-                          <span className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded text-[9px] font-black bg-sky-500/20 text-sky-300 border border-sky-500/30 transition shrink-0 hidden sm:inline-block">
-                            Открыть
-                          </span>
-                        </div>
+                {teachersList.length > 0 ? (
+                  teachersList.map((teacher) => (
+                    <tbody
+                      key={teacher.teacher_id}
+                      className={`border-b-2 divide-y transition ${
+                        isDark
+                          ? 'border-slate-800 divide-slate-800/80 hover:bg-slate-800/30'
+                          : 'border-slate-300 divide-slate-200 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      {[1, 2, 3, 4].map((pairNum, pIdx) => {
+                        const pairInfo = PAIR_ROWS[pIdx]
+                        return (
+                          <tr key={pairNum} className="h-16 2xl:h-20">
+                            {/* Первая строка блока: Преподаватель (фотография сверху по центру, компактный столбец; ФИО и должность под ней) */}
+                            {pIdx === 0 && (
+                              <td
+                                rowSpan={4}
+                                onClick={() => handleTeacherSelect(teacher)}
+                                className={`w-24 min-w-[92px] max-w-[100px] 2xl:w-28 2xl:min-w-[108px] 2xl:max-w-[120px] p-1 2xl:p-1.5 border-r align-middle text-center cursor-pointer group transition select-none ${
+                                  isDark
+                                    ? 'bg-slate-900 border-slate-800 hover:bg-sky-950/30'
+                                    : 'bg-white border-slate-300 hover:bg-sky-50/40'
+                                }`}
+                              >
+                                <div className="flex flex-col items-center justify-center text-center mx-auto">
+                                  {/* Фотография сверху (аккуратная круглая рамка) */}
+                                  <div
+                                    className={`w-14 h-14 2xl:w-16 2xl:h-16 rounded-full border-2 flex items-center justify-center shrink-0 overflow-hidden shadow-sm mx-auto mb-1 group-hover:scale-105 group-hover:border-sky-500 transition-all duration-200 ${
+                                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+                                    }`}
+                                  >
+                                    {teacher.photo_url ? (
+                                      <img
+                                        src={`${teacher.photo_url}?v=${photoKey}`}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <User className="w-7 h-7 2xl:w-8 2xl:h-8 text-sky-500" />
+                                    )}
+                                  </div>
 
-                        {/* 6 дней недели */}
-                        {DAYS_OF_WEEK.map((day) => {
-                          const isToday = todayDow === day.num
-                          return (
-                            <div
-                              key={day.num}
-                              className={`border-r last:border-r-0 border-slate-800/80 grid grid-cols-4 divide-x divide-slate-800/60 p-1 ${
-                                isToday ? 'bg-sky-950/15' : ''
+                                  {/* Должность / ученая степень */}
+                                  <span className="text-[8px] 2xl:text-[9px] font-extrabold text-sky-500 uppercase tracking-wide mb-0.5 block leading-tight truncate max-w-full px-0.5">
+                                    {teacher.academic_degree || teacher.rank || 'Преподаватель'}
+                                  </span>
+
+                                  {/* ФИО преподавателя */}
+                                  <span
+                                    className={`text-[10px] 2xl:text-[11px] font-black leading-tight break-words max-w-[85px] 2xl:max-w-[100px] mx-auto block ${
+                                      isDark ? 'text-slate-100' : 'text-slate-900'
+                                    }`}
+                                  >
+                                    {teacher.full_name}
+                                  </span>
+
+                                  <span className="opacity-0 group-hover:opacity-100 mt-0.5 text-[7px] 2xl:text-[8px] font-bold text-sky-500 transition block">
+                                    Открыть →
+                                  </span>
+                                </div>
+                              </td>
+                            )}
+
+                            {/* Колонка номера пары и времени */}
+                            <td
+                              className={`w-14 min-w-[56px] 2xl:w-16 2xl:min-w-[64px] p-1 border-r text-center align-middle font-mono ${
+                                isDark ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-300'
                               }`}
                             >
-                              {/* 4 пары (1, 2, 3, 4) */}
-                              {[1, 2, 3, 4].map((pairNum) => {
-                                const event = (teacher.lessons || []).find(
-                                  (l) => l.day_of_week === day.num && l.pair_number === pairNum
-                                )
+                              <div className={`font-black text-xs ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+                                {pairInfo.name}
+                              </div>
+                              <div
+                                className={`text-[9px] leading-tight ${isDark ? 'text-slate-400' : 'text-slate-500'}`}
+                              >
+                                {pairInfo.time}
+                              </div>
+                            </td>
 
-                                if (!event) {
-                                  return (
-                                    <div
-                                      key={pairNum}
-                                      className="min-w-[115px] h-full w-full flex items-center justify-center text-slate-800 text-[10px]"
-                                    >
-                                      —
-                                    </div>
-                                  )
-                                }
+                            {/* 7 ячеек занятий по дням недели */}
+                            {orderedDays.map((day) => {
+                              const event = findLesson(teacher.lessons, day.id, pairNum)
+                              const isToday = currentDayId === day.id
 
-                                const facultyColor = event.faculty_color || '#FFAAFF'
-                                const lessonTypeStr = `${
-                                  event.event_type || event.lesson_type || event.event_type_alias || 'Пара'
-                                } ${event.lesson_num ? event.lesson_num : ''}`.trim()
-                                const roomStr =
-                                  event.room_name ||
-                                  (Array.isArray(event.all_rooms) && event.all_rooms[0]) ||
-                                  'Ауд.'
-                                const groupStr =
-                                  event.group_name ||
-                                  (Array.isArray(event.all_groups) && event.all_groups[0]) ||
-                                  'Группа'
-                                const courseStr =
-                                  event.course_alias ||
-                                  event.course_name ||
-                                  event.course_title ||
-                                  'Занятие'
-
+                              if (!event) {
                                 return (
+                                  <td
+                                    key={`${day.id}-${pairNum}`}
+                                    className={`p-1 border-r last:border-r-0 text-center align-middle ${
+                                      isDark
+                                        ? day.isWeekend
+                                          ? 'bg-slate-950/40 border-slate-800'
+                                          : isToday
+                                          ? 'bg-sky-950/20 border-slate-800'
+                                          : 'bg-slate-900 border-slate-800'
+                                        : day.isWeekend
+                                        ? 'bg-slate-50/60 border-slate-300'
+                                        : isToday
+                                        ? 'bg-sky-50/20 border-slate-300'
+                                        : 'bg-white border-slate-300'
+                                    }`}
+                                  >
+                                    {day.isWeekend ? (
+                                      <span
+                                        className={`font-semibold text-[10px] 2xl:text-xs ${
+                                          isDark ? 'text-slate-600' : 'text-slate-400'
+                                        }`}
+                                      >
+                                        Выходной
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`font-mono text-sm ${
+                                          isDark ? 'text-slate-700' : 'text-slate-300'
+                                        }`}
+                                      >
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                )
+                              }
+
+                              const fColor = event.faculty_color || '#FFAAFF'
+                              const groupBadge = renderGroupBadge(event.all_groups || event.group_name)
+                              const allGroupsTooltip =
+                                Array.isArray(event.all_groups) && event.all_groups.length > 0
+                                  ? event.all_groups.join(', ')
+                                  : event.group_name || ''
+                              const lessonTypeStr = `${
+                                event.event_type || event.lesson_type || 'Пара'
+                              } ${event.lesson_num ? event.lesson_num : ''}`.trim()
+                              const roomStr = event.room_name || 'Ауд.'
+                              const courseStr =
+                                event.course_alias ||
+                                event.course_name ||
+                                event.course_title ||
+                                'Занятие'
+
+                              return (
+                                <td
+                                  key={`${day.id}-${pairNum}`}
+                                  className={`p-1 border-r last:border-r-0 align-middle ${
+                                    isDark ? 'border-slate-800' : 'border-slate-300'
+                                  }`}
+                                >
+                                  {/* Карточка пары: 4 белые плашки на фоне факультета */}
                                   <div
-                                    key={pairNum}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleTeacherSelect(teacher)
-                                    }}
-                                    className="min-w-[115px] h-full w-full p-1 rounded-lg flex flex-col justify-center items-center gap-1 select-none transition-transform hover:scale-[1.02] cursor-pointer shadow-sm overflow-hidden"
-                                    style={{ backgroundColor: facultyColor }}
+                                    className="w-full h-full p-1 2xl:p-1.5 rounded-lg flex flex-col justify-center items-center gap-0.5 select-none transition-transform hover:scale-[1.01] shadow-sm border border-slate-300/40"
+                                    style={{ backgroundColor: fColor }}
+                                    title={`${lessonTypeStr}\n${roomStr}\nГруппы: ${allGroupsTooltip}\n${courseStr}`}
                                   >
                                     {/* 1. Тип занятия */}
-                                    <div className="w-full max-w-[110px] bg-white text-slate-900 rounded-full py-0.5 px-1.5 text-center text-[10px] font-bold shadow-sm leading-tight break-words">
+                                    <div className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate">
                                       {lessonTypeStr}
                                     </div>
 
-                                    {/* 2. Номер аудитории */}
-                                    <div className="w-full max-w-[110px] bg-white text-slate-900 rounded-full py-0.5 px-1.5 text-center text-[10px] font-bold shadow-sm leading-tight break-words">
+                                    {/* 2. Аудитория */}
+                                    <div className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate">
                                       {roomStr}
                                     </div>
 
-                                    {/* 3. Номер группы */}
-                                    <div className="w-full max-w-[110px] bg-white text-slate-900 rounded-full py-0.5 px-1.5 text-center text-[10px] font-bold shadow-sm leading-tight break-words">
-                                      {groupStr}
+                                    {/* 3. Группа / Поток */}
+                                    <div
+                                      className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate"
+                                      title={allGroupsTooltip}
+                                    >
+                                      {groupBadge}
                                     </div>
 
-                                    {/* 4. Номер/шифр дисциплины */}
-                                    <div className="w-full max-w-[110px] bg-white text-slate-900 rounded-full py-0.5 px-1.5 text-center text-[10px] font-bold shadow-sm leading-tight break-words">
+                                    {/* 4. Шифр дисциплины */}
+                                    <div className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate">
                                       {courseStr}
                                     </div>
                                   </div>
-                                )
-                              })}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="h-64 flex flex-col items-center justify-center text-slate-500 gap-2">
-                      <Calendar className="w-10 h-10 opacity-30" />
-                      <span className="text-sm">Загрузка расписания сотрудников кафедры...</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  ))
+                ) : (
+                  <tbody>
+                    <tr>
+                      <td
+                        colSpan={9}
+                        className={`text-center py-16 text-sm font-semibold ${
+                          isDark ? 'text-slate-500' : 'text-slate-400'
+                        }`}
+                      >
+                        Загрузка расписания преподавателей кафедры...
+                      </td>
+                    </tr>
+                  </tbody>
+                )}
+              </table>
             </div>
           </div>
         ) : (
-          /* ================= РЕЖИМ 2: ПЕРСОНАЛЬНОЕ РАСПИСАНИЕ ПО DIALOGNEIROSET.UI ================= */
-          <div className="flex-1 flex flex-col justify-between animate-fadeIn transition-all duration-500 min-w-0">
-            {/* Заголовок DialogNeiroSet: label_people */}
-            <div className="p-4 rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950/80 to-slate-900 border-2 border-sky-500/50 shadow-2xl flex items-center justify-between mb-3 shrink-0">
-              <div className="flex items-center gap-4">
-                {/* Фото преподавателя */}
-                <div className="relative shrink-0">
+          /* ================= РЕЖИМ 2: ПЕРСОНАЛЬНОЕ РАСПИСАНИЕ ПРЕПОДАВАТЕЛЯ (DIALOGNEIROSET.UI) ================= */
+          <div
+            className={`flex-1 min-h-0 w-full flex flex-col rounded-xl 2xl:rounded-2xl border p-3 2xl:p-4 overflow-hidden shadow-lg ${
+              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
+            }`}
+          >
+            {/* Шапка персонального диалога */}
+            <div
+              className={`flex items-center justify-between pb-3 mb-3 border-b shrink-0 ${
+                isDark ? 'border-slate-800' : 'border-slate-200'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-12 h-12 2xl:w-14 2xl:h-14 rounded-full border-2 flex items-center justify-center shrink-0 overflow-hidden shadow-md ${
+                    isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+                  }`}
+                >
                   {activeTeacherSchedule?.photo_url ? (
                     <img
-                      src={activeTeacherSchedule.photo_url}
-                      alt={activeTeacherSchedule.teacher_name}
-                      className="w-16 h-16 rounded-2xl object-cover border-2 border-sky-400 shadow-xl shadow-sky-500/20"
+                      src={`${activeTeacherSchedule.photo_url}?v=${photoKey}`}
+                      alt=""
+                      className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-indigo-600/30 border-2 border-indigo-400/50 flex items-center justify-center">
-                      <User className="w-8 h-8 text-indigo-300" />
-                    </div>
-                  )}
-                  {isFaceDetected && (
-                    <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center text-[10px] font-black text-white shadow-lg">
-                      <Check className="w-3 h-3 text-white" />
-                    </span>
+                    <User className="w-7 h-7 2xl:w-8 2xl:h-8 text-sky-500" />
                   )}
                 </div>
-
                 <div>
                   <div className="flex items-center gap-2">
-                    {isFaceDetected ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase tracking-wider">
-                        Распознано по лицу ({Math.round(recognitionConfidence * 100)}%)
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 uppercase tracking-wider flex items-center gap-1">
-                        <Eye className="w-3 h-3" />
-                        Индивидуальный просмотр
-                      </span>
-                    )}
-                    {activeTeacherSchedule?.cathedra_name && (
-                      <span className="text-xs text-slate-400 font-medium">
-                        • {activeTeacherSchedule.cathedra_name}
-                      </span>
-                    )}
+                    <span className="text-base 2xl:text-xl font-black">
+                      {teacherGreeting || activeTeacherSchedule?.teacher_name}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] 2xl:text-xs font-bold border ${
+                        isDark
+                          ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                          : 'bg-sky-100 text-sky-800 border-sky-300'
+                      }`}
+                    >
+                      {activeTeacherSchedule?.academic_degree || 'Преподаватель'}
+                    </span>
                   </div>
-
-                  {teacherGreeting && (
-                    <div className="text-xs font-bold text-sky-400 mt-1">
-                      {teacherGreeting}
-                    </div>
-                  )}
-
-                  {/* Крупный заголовок label_people (воинское звание + ФИО) */}
-                  <h2 className="text-2xl lg:text-3xl font-black text-white mt-0.5 tracking-tight flex items-center gap-2">
-                    {activeTeacherSchedule?.academic_degree ? (
-                      <span className="text-amber-400 font-black mr-1">
-                        {activeTeacherSchedule.academic_degree}
-                      </span>
-                    ) : null}
-                    <span>{activeTeacherSchedule?.teacher_name}</span>
-                  </h2>
-
-                  <div className="flex items-center gap-4 text-xs text-slate-300 mt-0.5 font-medium">
-                    <span>
-                      Неделя: <strong className="text-sky-300">{activeTeacherSchedule?.week_name}</strong>
-                    </span>
-                    <span>
-                      • Всего занятий: <strong className="text-white">{activeTeacherSchedule?.total_lessons ?? 0} пар</strong>
-                    </span>
+                  <div
+                    className={`text-xs 2xl:text-sm font-medium ${
+                      isDark ? 'text-slate-400' : 'text-slate-600'
+                    }`}
+                  >
+                    {activeTeacherSchedule?.cathedra_name || 'Кафедра'} • Всего занятий:{' '}
+                    <strong className={isDark ? 'text-white' : 'text-slate-900'}>
+                      {activeTeacherSchedule?.total_lessons ?? 0}
+                    </strong>
                   </div>
                 </div>
               </div>
 
-              {/* Круговой таймер активности и кнопка закрытия */}
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-3 bg-slate-950/80 px-4 py-2 rounded-2xl border border-slate-800">
-                  <div className="relative w-11 h-11 flex items-center justify-center">
-                    <svg className="w-11 h-11 transform -rotate-90">
-                      <circle
-                        cx="22"
-                        cy="22"
-                        r="18"
-                        stroke="currentColor"
-                        strokeWidth="3.5"
-                        className="text-slate-800"
-                        fill="transparent"
-                      />
-                      <circle
-                        cx="22"
-                        cy="22"
-                        r="18"
-                        stroke="currentColor"
-                        strokeWidth="3.5"
-                        className="text-sky-400 transition-all duration-1000 ease-linear"
-                        fill="transparent"
-                        strokeDasharray={113.1}
-                        strokeDashoffset={113.1 - (113.1 * timerSeconds) / maxTimerSeconds}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span className="absolute font-mono font-bold text-sm text-white">
-                      {timerSeconds}
-                    </span>
+              {/* Статус присутствия и кнопка возврата */}
+              <div className="flex items-center gap-2.5">
+                {isFaceDetected ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Преподаватель у экрана ({Math.round(recognitionConfidence * 100)}%)</span>
                   </div>
-                  <div className="text-left">
-                    <div className="text-[11px] font-bold text-slate-200">Таймер возврата</div>
-                    <div className="text-[10px] text-slate-400">К общему расписанию</div>
+                ) : departureCountdown !== null ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold text-xs animate-pulse">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Возврат к табло через {departureCountdown} с...</span>
                   </div>
-                </div>
+                ) : (
+                  <div
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${
+                      isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5 text-sky-500" />
+                    <span>Таймаут: {timerSeconds} с</span>
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={handleDismissTeacherView}
-                  className="px-5 py-3 rounded-2xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 font-black text-xs transition flex items-center gap-2 shadow-lg"
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
+                    isDark
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+                  }`}
+                  title="Вернуться к общему расписанию кафедры"
                 >
-                  <X className="w-4 h-4" />
-                  <span>Отойти от экрана</span>
+                  <X className="w-3.5 h-3.5" />
+                  <span>Вернуться к табло</span>
                 </button>
               </div>
             </div>
 
-            {/* tableWidgetRaspPeople: 4 строки («1-2», «3-4», «5-6», «7-8») и 6 столбцов (Пн-Сб) */}
-            <div className="flex-1 flex flex-col rounded-3xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-2xl">
+            {/* Таблица персонального расписания: 4 пары и 7 дней со старта от сегодня */}
+            <div
+              className={`flex-1 min-h-0 flex flex-col rounded-xl 2xl:rounded-2xl border overflow-hidden shadow-sm ${
+                isDark ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-300'
+              }`}
+            >
               {/* Шапка дней недели */}
-              <div className="grid grid-cols-[140px_repeat(6,1fr)] border-b border-slate-800 bg-slate-950/80 text-xs font-bold text-center shrink-0">
-                <div className="p-3 text-slate-400 border-r border-slate-800 flex items-center justify-center font-mono">
+              <div
+                className={`grid grid-cols-[85px_repeat(7,1fr)] 2xl:grid-cols-[115px_repeat(7,1fr)] border-b text-[10px] 2xl:text-xs font-bold text-center shrink-0 ${
+                  isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
+                }`}
+              >
+                <div
+                  className={`p-2 border-r flex items-center justify-center font-mono ${
+                    isDark ? 'text-slate-400 border-slate-800' : 'text-slate-700 border-slate-300'
+                  }`}
+                >
                   Пара / Время
                 </div>
-                {DAYS_OF_WEEK.map((day) => {
-                  const isToday = todayDow === day.num
+                {orderedDays.map((day) => {
+                  const isToday = currentDayId === day.id
                   return (
                     <div
-                      key={day.num}
-                      className={`p-3 border-r last:border-r-0 border-slate-800 flex flex-col items-center justify-center transition ${
-                        isToday
-                          ? 'bg-sky-600/20 text-sky-300 border-b-2 border-b-sky-400 font-black'
-                          : 'text-slate-300'
+                      key={day.id}
+                      className={`p-1.5 2xl:p-2 border-r last:border-r-0 flex flex-col items-center justify-center transition ${
+                        isDark
+                          ? isToday
+                            ? 'bg-sky-950/60 text-sky-300 border-b-2 border-b-sky-500 border-slate-800 font-black'
+                            : day.isWeekend
+                            ? 'bg-rose-950/30 text-rose-300 border-slate-800'
+                            : 'text-slate-200 border-slate-800'
+                          : isToday
+                          ? 'bg-sky-50 text-sky-900 border-b-2 border-b-sky-500 border-slate-300 font-black'
+                          : day.isWeekend
+                          ? 'bg-rose-50/60 text-rose-800 border-slate-300'
+                          : 'text-slate-800 border-slate-300'
                       }`}
                     >
-                      <span className="text-sm uppercase tracking-wider">{day.name}</span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        {isToday ? 'Сегодня' : day.short}
+                      <span className="uppercase tracking-wider">{day.name}</span>
+                      <span className="text-[9px] opacity-75 font-normal">
+                        {isToday ? 'Сегодня' : day.isWeekend ? 'Выходной' : day.short}
                       </span>
                     </div>
                   )
@@ -858,64 +1201,118 @@ export const KioskDisplay: React.FC = () => {
               </div>
 
               {/* 4 строки пар (1-2, 3-4, 5-6, 7-8) */}
-              <div className="flex-1 grid grid-rows-4 divide-y divide-slate-800/80 overflow-hidden">
+              <div
+                className={`flex-1 min-h-0 grid grid-rows-4 divide-y overflow-hidden ${
+                  isDark ? 'divide-slate-800' : 'divide-slate-200'
+                }`}
+              >
                 {PAIR_ROWS.map((pairRow) => (
-                  <div key={pairRow.num} className="grid grid-cols-[140px_repeat(6,1fr)] divide-x divide-slate-800/80">
-                    {/* Ячейка номера пары и времени */}
-                    <div className="p-3 bg-slate-950/50 flex flex-col justify-center items-center text-center">
-                      <span className="px-3 py-1 rounded-xl text-xs font-black bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                  <div
+                    key={pairRow.num}
+                    className={`grid grid-cols-[85px_repeat(7,1fr)] 2xl:grid-cols-[115px_repeat(7,1fr)] divide-x h-full ${
+                      isDark ? 'divide-slate-800' : 'divide-slate-200'
+                    }`}
+                  >
+                    {/* Номер пары и время */}
+                    <div
+                      className={`p-1 2xl:p-2 flex flex-col justify-center items-center text-center ${
+                        isDark ? 'bg-slate-900/60' : 'bg-slate-50'
+                      }`}
+                    >
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-[10px] 2xl:text-xs font-black border ${
+                          isDark
+                            ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                            : 'bg-sky-100 text-sky-800 border-sky-300'
+                        }`}
+                      >
                         {pairRow.name}
                       </span>
-                      <span className="text-[11px] font-mono text-slate-400 mt-1">
+                      <span
+                        className={`text-[9px] 2xl:text-[10px] font-mono mt-0.5 ${
+                          isDark ? 'text-slate-400' : 'text-slate-600'
+                        }`}
+                      >
                         {pairRow.time}
                       </span>
                     </div>
 
-                    {/* Ячейки по 6 дням недели (с 4 белыми плашками на цвете факультета) */}
-                    {DAYS_OF_WEEK.map((day) => {
-                      const lesson = (activeTeacherSchedule?.lessons || []).find(
-                        (l) => l.day_of_week === day.num && l.pair_number === pairRow.num
+                    {/* Ячейки по 7 дням недели */}
+                    {orderedDays.map((day) => {
+                      const lesson = findLesson(
+                        activeTeacherSchedule?.lessons,
+                        day.id,
+                        pairRow.num
                       )
-                      const isToday = todayDow === day.num
+                      const isToday = currentDayId === day.id
                       const fColor = lesson?.faculty_color || '#FFAAFF'
+                      const groupBadge = renderGroupBadge(lesson?.all_groups || lesson?.group_name)
+                      const allGroupsTooltip =
+                        Array.isArray(lesson?.all_groups) && lesson!.all_groups.length > 0
+                          ? lesson!.all_groups.join(', ')
+                          : lesson?.group_name || ''
+                      const lessonTypeStr = `${
+                        lesson?.event_type || lesson?.lesson_type || 'Пара'
+                      } ${lesson?.lesson_num ? lesson.lesson_num : ''}`.trim()
+                      const roomStr = lesson?.room_name || 'Ауд.'
+                      const courseStr =
+                        lesson?.course_alias ||
+                        lesson?.course_name ||
+                        lesson?.course_title ||
+                        'Занятие'
 
                       return (
                         <div
-                          key={day.num}
-                          className={`p-2 flex flex-col justify-between transition overflow-hidden ${
-                            isToday ? 'bg-slate-900/90' : 'bg-slate-900/40 hover:bg-slate-900/60'
+                          key={`${day.id}-${pairRow.num}`}
+                          className={`p-1 2xl:p-1.5 flex flex-col justify-between transition overflow-hidden ${
+                            isDark
+                              ? day.isWeekend
+                                ? 'bg-slate-950/40'
+                                : isToday
+                                ? 'bg-sky-950/20'
+                                : 'bg-slate-900'
+                              : day.isWeekend
+                              ? 'bg-slate-50/60'
+                              : isToday
+                              ? 'bg-sky-50/20'
+                              : 'bg-white'
                           }`}
                         >
                           {lesson ? (
                             <div
-                              className="h-full w-full p-2 rounded-2xl flex flex-col justify-center items-center gap-1.5 shadow-md select-none transition-transform hover:scale-[1.01]"
+                              className="h-full w-full p-1.5 2xl:p-2 rounded-xl flex flex-col justify-center items-center gap-1 select-none transition-transform hover:scale-[1.01] shadow-sm border border-slate-300/40"
                               style={{ backgroundColor: fColor }}
+                              title={`${lessonTypeStr}\n${roomStr}\nГруппы: ${allGroupsTooltip}\n${courseStr}`}
                             >
-                              {/* 1. Тип занятия */}
-                              <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
-                                {`${lesson.event_type || lesson.lesson_type || 'Пара'} ${
-                                  lesson.lesson_num ? lesson.lesson_num : ''
-                                }`.trim()}
+                              <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate">
+                                {lessonTypeStr}
                               </div>
-
-                              {/* 2. Номер аудитории */}
-                              <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
-                                {lesson.room_name || 'Ауд.'}
+                              <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate">
+                                {roomStr}
                               </div>
-
-                              {/* 3. Номер учебной группы */}
-                              <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
-                                {lesson.group_name || 'Группа'}
+                              <div
+                                className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate"
+                                title={allGroupsTooltip}
+                              >
+                                {groupBadge}
                               </div>
-
-                              {/* 4. Шифр дисциплины */}
-                              <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
-                                {lesson.course_alias || lesson.course_name || lesson.course_title || 'Занятие'}
+                              <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate">
+                                {courseStr}
                               </div>
                             </div>
                           ) : (
-                            <div className="h-full flex items-center justify-center text-slate-700 font-mono text-sm">
-                              —
+                            <div className="h-full flex items-center justify-center font-mono text-xs">
+                              {day.isWeekend ? (
+                                <span
+                                  className={`font-bold text-[10px] 2xl:text-xs ${
+                                    isDark ? 'text-slate-600' : 'text-slate-400'
+                                  }`}
+                                >
+                                  Выходной
+                                </span>
+                              ) : (
+                                <span className={isDark ? 'text-slate-700' : 'text-slate-300'}>—</span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -927,108 +1324,164 @@ export const KioskDisplay: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* ================= БЛОК ВИДЕОАНАЛИТИКИ ДЛЯ ЭКРАНОВ 2XL (>= 1600px) ================= */}
-        {mode === 'carousel' && (
-          <aside className="hidden 2xl:flex w-[290px] shrink-0 flex-col rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur-md p-3.5 shadow-xl">
-            <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800 text-xs">
-              <span className="font-extrabold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-                <Camera className="w-4 h-4 text-sky-400" />
-                Видеоаналитика
-              </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                SCRFD + ArcFace
-              </span>
-            </div>
-
-            {/* Окно трансляции с камеры */}
-            <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-800 bg-black flex items-center justify-center">
-              <img
-                src="/api/v1/kiosk/video_feed"
-                alt="Камера терминала"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  ;(e.target as HTMLElement).style.display = 'none'
-                }}
-              />
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-sm border border-slate-700 text-[10px] font-mono font-bold text-white">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                <span>LIVE</span>
-              </div>
-            </div>
-
-            {/* Статусная плашка под видео (строгий текст без эмодзи) */}
-            <div className="mt-3 p-3 rounded-xl border border-slate-800 bg-slate-950/70 flex flex-col gap-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Статус распознавания
-              </div>
-              {lastRecognizedTeacher ? (
-                <div className="flex items-start gap-2 text-xs font-bold text-emerald-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1" />
-                  <span className="leading-snug">
-                    Распознан:{' '}
-                    {lastRecognizedTeacher.academic_degree ? `${lastRecognizedTeacher.academic_degree} ` : ''}
-                    {lastRecognizedTeacher.full_name}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-xs font-semibold text-sky-300">
-                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping shrink-0" />
-                  <span>Поиск лица в кадре...</span>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-auto pt-3 border-t border-slate-800 text-[11px] text-slate-400 leading-snug">
-              При подходе преподавателя к камере терминал автоматически открывает персональное расписание на неделю.
-            </div>
-          </aside>
-        )}
       </main>
 
+      {/* ================= ПЛАВАЮЩЕЕ ПЕРЕТАСКИВАЕМОЕ ОКНО ВИДЕОКАМЕРЫ (НА ЛЮБОМ ЭКРАНЕ) ================= */}
+      {isVideoFloatingOpen && (
+        <div
+          style={{ left: `${videoPos.x}px`, top: `${videoPos.y}px` }}
+          className={`fixed z-50 w-80 2xl:w-96 rounded-2xl border-2 shadow-2xl overflow-hidden select-none transition-shadow ${
+            isDark
+              ? 'bg-slate-900 border-sky-500/60 shadow-sky-950/50'
+              : 'bg-white border-sky-500 shadow-slate-900/20'
+          }`}
+        >
+          {/* Верхняя ручка перетаскивания окна */}
+          <div
+            onPointerDown={handleVideoPointerDown}
+            onPointerMove={handleVideoPointerMove}
+            onPointerUp={handleVideoPointerUp}
+            className="px-3 py-2 bg-slate-950 text-white flex items-center justify-between cursor-grab active:cursor-grabbing border-b border-slate-800"
+          >
+            <div className="flex items-center gap-1.5">
+              <GripVertical className="w-4 h-4 text-sky-400" />
+              <span className="text-[11px] font-black uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5" />
+                Видеокамера табло
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleCameraFlip}
+                className={`p-1 rounded transition text-xs flex items-center gap-1 ${
+                  isCameraFlipped
+                    ? 'text-sky-400 bg-sky-950/60 border border-sky-800'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title={isCameraFlipped ? 'Зеркальное отображение включено (нажмите для обычного)' : 'Включить зеркальное отображение'}
+              >
+                <FlipHorizontal className="w-3.5 h-3.5" />
+              </button>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVideoFloatingOpen(false)
+                  localStorage.setItem('kiosk_show_video', 'false')
+                }}
+                className="text-slate-400 hover:text-white p-0.5 rounded transition"
+                title="Скрыть окно видео"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Видеопоток MJPEG */}
+          <div className="relative bg-black aspect-[4/3] flex items-center justify-center overflow-hidden">
+            <img
+              src="/api/v1/kiosk/video_feed"
+              alt="Видео с камеры"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                ;(e.target as HTMLElement).style.opacity = '0.3'
+              }}
+            />
+            <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/75 backdrop-blur text-[9px] font-mono font-bold text-white border border-slate-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>LIVE • AI</span>
+            </div>
+          </div>
+
+          {/* Статусный подвал плавающего окна */}
+          <div
+            className={`p-2.5 text-[10px] flex items-center justify-between border-t ${
+              isDark
+                ? 'bg-slate-950 border-slate-800 text-slate-300'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}
+          >
+            <div className="truncate max-w-[200px]">
+              {lastRecognizedTeacher ? (
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate block">
+                  Лицо: {lastRecognizedTeacher.full_name}
+                </span>
+              ) : (
+                <span className="text-slate-500 font-medium">Поиск лиц в кадре...</span>
+              )}
+            </div>
+            <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-[10px]">
+              {isWsConnected ? 'Подключено' : 'Офлайн'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ================= НИЖНЯЯ ПАНЕЛЬ С ЛЕГЕНДОЙ ФАКУЛЬТЕТОВ ПО ORGANIZE.UI ================= */}
-      <footer className="h-12 bg-slate-900/95 border-t border-slate-800 px-6 flex items-center justify-between shrink-0 relative z-20 text-xs">
+      <footer
+        className={`h-10 2xl:h-12 px-3 2xl:px-6 flex items-center justify-between shrink-0 relative z-20 text-[10px] 2xl:text-xs border-t ${
+          isDark
+            ? 'bg-slate-900 border-slate-800 text-slate-300'
+            : 'bg-white border-slate-300 text-slate-700'
+        }`}
+      >
         {/* Сегодняшняя дата и неделя */}
-        <div className="flex items-center gap-4 text-slate-300">
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-slate-400">Сегодняшняя дата:</span>
-            <span className="font-mono font-bold text-white px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+            <span className={isDark ? 'text-slate-400 font-bold' : 'text-slate-500 font-bold'}>
+              Дата:
+            </span>
+            <span
+              className={`font-mono font-bold px-1.5 py-0.2 rounded border ${
+                isDark
+                  ? 'bg-slate-950 text-white border-slate-700'
+                  : 'bg-slate-100 text-slate-900 border-slate-300'
+              }`}
+            >
               {carouselData?.date_str || currentTime.toLocaleDateString('ru-RU')}
             </span>
           </div>
 
           <div className="hidden sm:flex items-center gap-1.5">
-            <span className="font-bold text-slate-400">Неделя:</span>
-            <span className="font-semibold text-sky-300">
+            <span className={isDark ? 'text-slate-400 font-bold' : 'text-slate-500 font-bold'}>
+              Неделя:
+            </span>
+            <span className="font-semibold text-sky-500">
               {carouselData?.week_name || 'Текущая'}
             </span>
           </div>
         </div>
 
         {/* Легенда факультетов по organaizer.ui */}
-        <div className="flex items-center gap-5">
-          <span className="font-extrabold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1">
-            <GraduationCap className="w-3.5 h-3.5 text-sky-400" />
+        <div className="flex items-center gap-3 2xl:gap-5">
+          <span className="font-extrabold uppercase tracking-wider text-[10px] 2xl:text-[11px] flex items-center gap-1">
+            <GraduationCap className="w-3.5 h-3.5 text-sky-500" />
             Факультеты:
           </span>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 2xl:gap-4">
             {faculties.map((fac) => (
-              <div key={fac.name} className="flex items-center gap-1.5">
+              <div key={fac.name} className="flex items-center gap-1">
                 <span
-                  className="w-4 h-4 rounded shadow-sm shrink-0 border border-slate-950/60"
+                  className="w-3 h-3 2xl:w-3.5 2xl:h-3.5 rounded shadow-sm shrink-0 border border-slate-400/40"
                   style={{ backgroundColor: fac.color }}
                 />
-                <span className="font-bold text-slate-200 text-xs">{fac.name}</span>
+                <span className={`font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                  {fac.name}
+                </span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Подсказка для преподавателя */}
-        <div className="hidden md:flex items-center gap-2 text-sky-300 font-semibold text-xs">
+        <div className="hidden md:flex items-center gap-1.5 text-sky-500 font-semibold text-[10px] 2xl:text-xs">
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-500 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-600"></span>
           </span>
           <span>Подойдите к экрану для персонального расписания</span>
         </div>
@@ -1036,5 +1489,3 @@ export const KioskDisplay: React.FC = () => {
     </div>
   )
 }
-
-export default KioskDisplay

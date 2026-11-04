@@ -17,27 +17,29 @@ class KioskRepository:
         rows = await self.conn.fetch(sql)
         settings: Dict[str, Any] = {
             "camera_source": "0",
-            "recognition_threshold": 0.48,
+            "recognition_threshold": 0.32,
+            "similarity_threshold": 0.32,
             "carousel_interval": 12,
-            "idle_timeout": 20,
+            "idle_timeout": 6,
             "is_active": True,
+            "camera_flip": False,
         }
         for r in rows:
             k = r["key"]
             v = r["value"]
             if k == "camera_source":
                 settings[k] = v
-            elif k == "recognition_threshold":
+            elif k in ("recognition_threshold", "similarity_threshold"):
                 try:
                     settings[k] = float(v)
                 except ValueError:
                     pass
-            elif k in ("carousel_interval", "idle_timeout"):
+            elif k in ("carousel_interval", "idle_timeout", "person_timeout"):
                 try:
                     settings[k] = int(v)
                 except ValueError:
                     pass
-            elif k == "is_active":
+            elif k in ("is_active", "active", "camera_flip"):
                 settings[k] = v.lower() in ("true", "1", "yes")
         return settings
 
@@ -315,6 +317,52 @@ class KioskRepository:
             "monday": monday,
         }
 
+    async def _get_periods_map(self) -> Dict[Any, Dict[str, Any]]:
+        """Загрузка всех периодов из public.periods и отображение на порядковые пары 1-4."""
+        sql = """
+            SELECT lid, name, short_time, starttime, stoptime 
+            FROM public.periods 
+            ORDER BY starttime ASC, lid ASC;
+        """
+        p_rows = await self.conn.fetch(sql)
+        periods_map = {}
+        for pr in p_rows:
+            p_num = extract_pair_number(pr["short_time"])
+            if not p_num and pr.get("name"):
+                name_str = str(pr["name"])
+                if "1-2" in name_str:
+                    p_num = 1
+                elif "3-4" in name_str:
+                    p_num = 2
+                elif "5-6" in name_str:
+                    p_num = 3
+                elif "7-8" in name_str:
+                    p_num = 4
+            if not p_num:
+                p_num = 1
+            time_range = format_period_time(pr["starttime"], pr["stoptime"])
+            info = {
+                "pair_number": p_num,
+                "time_range": time_range or f"{p_num}-я пара",
+            }
+            periods_map[pr["lid"]] = info
+            if p_num not in periods_map:
+                periods_map[p_num] = info
+
+        default_times = {
+            1: "09:00 - 10:35",
+            2: "10:45 - 12:20",
+            3: "13:00 - 14:35",
+            4: "14:45 - 16:20",
+        }
+        for n in range(1, 5):
+            if n not in periods_map:
+                periods_map[n] = {
+                    "pair_number": n,
+                    "time_range": default_times.get(n, f"{n}-я пара"),
+                }
+        return periods_map
+
     async def get_teacher_weekly_schedule(self, teacher_id: int) -> Dict[str, Any]:
         """Получить недельное расписание конкретного преподавателя (Пн-Сб, 1-4 пары)."""
         week_info = await self._get_current_week_variant()
@@ -350,39 +398,22 @@ class KioskRepository:
                 "total_lessons": 0,
             }
 
-        # Получаем периоды года
-        periods_sql = """
-            SELECT lid, short_time, starttime, stoptime 
-            FROM public.periods 
-            WHERE s_year_id = $1 
-            ORDER BY starttime ASC, lid ASC 
-            LIMIT 4;
-        """
-        p_rows = await self.conn.fetch(periods_sql, s_year_id)
-        if not p_rows:
-            p_rows = await self.conn.fetch(
-                "SELECT lid, short_time, starttime, stoptime FROM public.periods ORDER BY starttime ASC, lid ASC LIMIT 4;"
-            )
-
-        periods_map = {}
-        for idx, pr in enumerate(p_rows):
-            p_num = extract_pair_number(pr["short_time"]) or (idx + 1)
-            time_range = format_period_time(pr["starttime"], pr["stoptime"])
-            periods_map[pr["lid"]] = {
-                "pair_number": p_num,
-                "time_range": time_range or f"{p_num}-я пара",
-            }
+        # Получаем периоды звонков
+        periods_map = await self._get_periods_map()
 
         # Получаем пары преподавателя
         sched_sql = """
             SELECT 
-                ns.sheid,
+                MIN(ns.sheid) AS sheid,
                 ns.day_of_week,
                 ns.period,
                 c.title AS course_title,
                 c.alias AS course_alias,
                 et.alias AS lesson_type,
-                gn.name AS group_name,
+                COALESCE(MIN(ns.lesson_num), 1) AS lesson_num,
+                string_agg(DISTINCT gn.name, ', ' ORDER BY gn.name) AS group_name,
+                array_agg(DISTINCT gn.name ORDER BY gn.name) AS all_groups,
+                count(DISTINCT gn.gid) AS groups_count,
                 rm.short_name AS room_name,
                 COALESCE(f."shortName", f.faculty, '') AS faculty_short,
                 COALESCE(fc.color, f.color, '') AS db_faculty_color
@@ -394,45 +425,83 @@ class KioskRepository:
             LEFT JOIN public.faculty_colors fc ON f.idfaculty = fc.idfaculty
             LEFT JOIN public.rooms rm ON rm.rid = ns.rid[1]
             WHERE ns.sh_var_id = $1
-              AND ns.day_of_week BETWEEN 1 AND 6
+              AND ns.day_of_week BETWEEN 1 AND 7
               AND $2 = ANY(ns.teacher_mid)
+            GROUP BY 
+                ns.day_of_week, 
+                ns.period, 
+                c.title, 
+                c.alias, 
+                et.alias, 
+                rm.short_name, 
+                f."shortName", 
+                f.faculty, 
+                fc.color, 
+                f.color
             ORDER BY ns.day_of_week ASC, ns.period ASC;
         """
         sched_rows = await self.conn.fetch(sched_sql, sh_var_id, teacher_id)
 
-        day_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
+        day_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
-        lessons = []
+        lessons_map: Dict[Tuple[int, int], Dict[str, Any]] = {}
         for r in sched_rows:
             dow = r["day_of_week"]
-            p_meta = periods_map.get(r["period"], {"pair_number": 1, "time_range": "09:00 - 10:35"})
+            p_meta = periods_map.get(r["period"]) or (
+                {"pair_number": r["period"], "time_range": f"{r['period']}-я пара"}
+                if isinstance(r["period"], int) and 1 <= r["period"] <= 4
+                else {"pair_number": 1, "time_range": "09:00 - 10:35"}
+            )
+            p_num = p_meta["pair_number"]
             day_date = monday + timedelta(days=dow - 1)
             fac_name, fac_color = resolve_faculty(r["faculty_short"], r["db_faculty_color"])
 
-            lessons.append({
-                "sheid": r["sheid"],
-                "day_of_week": dow,
-                "day_name": day_names[dow - 1],
-                "date_str": day_date.strftime("%d.%m.%Y"),
-                "pair_number": p_meta["pair_number"],
-                "pair_name": f"{p_meta['pair_number'] * 2 - 1}-{p_meta['pair_number'] * 2}",
-                "time_str": p_meta["time_range"],
-                "course_title": r["course_title"] or r["course_alias"] or "Занятие",
-                "course_alias": r["course_alias"] or r["course_title"] or "Занятие",
-                "course_name": r["course_alias"] or r["course_title"] or "Занятие",
-                "lesson_type": r["lesson_type"] or "Пара",
-                "event_type": r["lesson_type"] or "Пара",
-                "event_type_alias": r["lesson_type"] or "Пара",
-                "lesson_num": p_meta["pair_number"],
-                "room_name": r["room_name"] or "--",
-                "all_rooms": [r["room_name"]] if r["room_name"] else [],
-                "group_name": r["group_name"] or "Группа",
-                "all_groups": [r["group_name"]] if r["group_name"] else [],
-                "teacher_name": t_row["full_name"],
-                "faculty_name": fac_name,
-                "faculty_short_name": fac_name,
-                "faculty_color": fac_color,
-            })
+            raw_groups = list(r["all_groups"]) if r["all_groups"] else ([r["group_name"]] if r["group_name"] else ["Группа"])
+            clean_groups = []
+            for g in raw_groups:
+                if g:
+                    for sub in str(g).split(','):
+                        s = sub.strip()
+                        if s and s not in clean_groups:
+                            clean_groups.append(s)
+
+            slot_key = (dow, p_num)
+            if slot_key in lessons_map:
+                existing = lessons_map[slot_key]
+                for g in clean_groups:
+                    if g not in existing["all_groups"]:
+                        existing["all_groups"].append(g)
+                existing["group_name"] = ", ".join(existing["all_groups"])
+                existing["groups"] = existing["all_groups"]
+                existing["groups_count"] = len(existing["all_groups"])
+            else:
+                lessons_map[slot_key] = {
+                    "sheid": r["sheid"],
+                    "day_of_week": dow,
+                    "day_name": day_names[dow - 1],
+                    "date_str": day_date.strftime("%d.%m.%Y"),
+                    "pair_number": p_num,
+                    "pair_name": f"{p_num * 2 - 1}-{p_num * 2}",
+                    "time_str": p_meta["time_range"],
+                    "course_title": r["course_title"] or r["course_alias"] or "Занятие",
+                    "course_alias": r["course_alias"] or r["course_title"] or "Занятие",
+                    "course_name": r["course_alias"] or r["course_title"] or "Занятие",
+                    "lesson_type": r["lesson_type"] or "Пара",
+                    "event_type": r["lesson_type"] or "Пара",
+                    "event_type_alias": r["lesson_type"] or "Пара",
+                    "lesson_num": r["lesson_num"] or 1,
+                    "room_name": r["room_name"] or "--",
+                    "all_rooms": [r["room_name"]] if r["room_name"] else [],
+                    "group_name": ", ".join(clean_groups) if clean_groups else "Группа",
+                    "all_groups": clean_groups if clean_groups else ["Группа"],
+                    "groups": clean_groups if clean_groups else ["Группа"],
+                    "groups_count": len(clean_groups),
+                    "teacher_name": t_row["full_name"],
+                    "faculty_name": fac_name,
+                    "faculty_short_name": fac_name,
+                    "faculty_color": fac_color,
+                }
+        lessons = list(lessons_map.values())
 
         return {
             "success": True,
@@ -455,28 +524,8 @@ class KioskRepository:
         today = dt_date.today()
         current_dow = today.isoweekday()
 
-        # Периоды года
-        periods_sql = """
-            SELECT lid, short_time, starttime, stoptime 
-            FROM public.periods 
-            WHERE s_year_id = $1 
-            ORDER BY starttime ASC, lid ASC 
-            LIMIT 4;
-        """
-        p_rows = await self.conn.fetch(periods_sql, s_year_id)
-        if not p_rows:
-            p_rows = await self.conn.fetch(
-                "SELECT lid, short_time, starttime, stoptime FROM public.periods ORDER BY starttime ASC, lid ASC LIMIT 4;"
-            )
-
-        periods_map = {}
-        for idx, pr in enumerate(p_rows):
-            p_num = extract_pair_number(pr["short_time"]) or (idx + 1)
-            time_range = format_period_time(pr["starttime"], pr["stoptime"])
-            periods_map[pr["lid"]] = {
-                "pair_number": p_num,
-                "time_range": time_range or f"{p_num}-я пара",
-            }
+        # Периоды звонков
+        periods_map = await self._get_periods_map()
 
         day_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
@@ -526,17 +575,20 @@ class KioskRepository:
         """
         teacher_rows = await self.conn.fetch(teachers_sql)
 
-        # 2. Все занятия на неделю (Пн-Сб)
+        # 2. Все занятия на неделю (Пн-Вс) с агрегацией групп
         all_week_sched_sql = """
             SELECT 
-                ns.sheid,
+                MIN(ns.sheid) AS sheid,
                 ns.day_of_week,
                 ns.period,
                 ns.teacher_mid,
                 c.title AS course_title,
                 c.alias AS course_alias,
                 et.alias AS lesson_type,
-                gn.name AS group_name,
+                COALESCE(MIN(ns.lesson_num), 1) AS lesson_num,
+                string_agg(DISTINCT gn.name, ', ' ORDER BY gn.name) AS group_name,
+                array_agg(DISTINCT gn.name ORDER BY gn.name) AS all_groups,
+                count(DISTINCT gn.gid) AS groups_count,
                 rm.short_name AS room_name,
                 COALESCE(f."shortName", f.faculty, '') AS faculty_short,
                 COALESCE(fc.color, f.color, '') AS db_faculty_color
@@ -548,21 +600,46 @@ class KioskRepository:
             LEFT JOIN public.faculty_colors fc ON f.idfaculty = fc.idfaculty
             LEFT JOIN public.rooms rm ON rm.rid = ns.rid[1]
             WHERE ns.sh_var_id = $1
-              AND ns.day_of_week BETWEEN 1 AND 6
+              AND ns.day_of_week BETWEEN 1 AND 7
+            GROUP BY 
+                ns.day_of_week, 
+                ns.period, 
+                ns.teacher_mid, 
+                c.title, 
+                c.alias, 
+                et.alias, 
+                rm.short_name, 
+                f."shortName", 
+                f.faculty, 
+                fc.color, 
+                f.color
             ORDER BY ns.day_of_week ASC, ns.period ASC;
         """
         all_sched_rows = await self.conn.fetch(all_week_sched_sql, sh_var_id)
 
-        teacher_lessons_map: Dict[int, List[Dict[str, Any]]] = {}
+        teacher_lessons_map: Dict[int, Dict[Tuple[int, int], Dict[str, Any]]] = {}
         for r in all_sched_rows:
             dow = r["day_of_week"]
-            if not (1 <= dow <= 6):
+            if not (1 <= dow <= 7):
                 continue
             day_date = monday + timedelta(days=dow - 1)
-            p_meta = periods_map.get(r["period"], {"pair_number": 1, "time_range": "09:00 - 10:35"})
+            p_meta = periods_map.get(r["period"]) or (
+                {"pair_number": r["period"], "time_range": f"{r['period']}-я пара"}
+                if isinstance(r["period"], int) and 1 <= r["period"] <= 4
+                else {"pair_number": 1, "time_range": "09:00 - 10:35"}
+            )
             fac_name, fac_color = resolve_faculty(r["faculty_short"], r["db_faculty_color"])
             p_num = p_meta["pair_number"]
             pair_name = f"{p_num * 2 - 1}-{p_num * 2}"
+
+            raw_groups = list(r["all_groups"]) if r["all_groups"] else ([r["group_name"]] if r["group_name"] else ["Группа"])
+            clean_groups = []
+            for g in raw_groups:
+                if g:
+                    for sub in str(g).split(','):
+                        s = sub.strip()
+                        if s and s not in clean_groups:
+                            clean_groups.append(s)
 
             lesson_dict = {
                 "sheid": r["sheid"],
@@ -578,11 +655,13 @@ class KioskRepository:
                 "lesson_type": r["lesson_type"] or "Пара",
                 "event_type": r["lesson_type"] or "Пара",
                 "event_type_alias": r["lesson_type"] or "Пара",
-                "lesson_num": p_num,
+                "lesson_num": r["lesson_num"] or 1,
                 "room_name": r["room_name"] or "--",
                 "all_rooms": [r["room_name"]] if r["room_name"] else [],
-                "group_name": r["group_name"] or "Группа",
-                "all_groups": [r["group_name"]] if r["group_name"] else [],
+                "group_name": ", ".join(clean_groups) if clean_groups else "Группа",
+                "all_groups": clean_groups if clean_groups else ["Группа"],
+                "groups": clean_groups if clean_groups else ["Группа"],
+                "groups_count": len(clean_groups),
                 "faculty_name": fac_name,
                 "faculty_short_name": fac_name,
                 "faculty_color": fac_color,
@@ -591,13 +670,24 @@ class KioskRepository:
             mids = r["teacher_mid"] or []
             for tmid in mids:
                 if tmid not in teacher_lessons_map:
-                    teacher_lessons_map[tmid] = []
-                teacher_lessons_map[tmid].append(lesson_dict)
+                    teacher_lessons_map[tmid] = {}
+                slot_key = (dow, p_num)
+                if slot_key in teacher_lessons_map[tmid]:
+                    existing = teacher_lessons_map[tmid][slot_key]
+                    for g in clean_groups:
+                        if g not in existing["all_groups"]:
+                            existing["all_groups"].append(g)
+                    existing["group_name"] = ", ".join(existing["all_groups"])
+                    existing["groups"] = existing["all_groups"]
+                    existing["groups_count"] = len(existing["all_groups"])
+                else:
+                    teacher_lessons_map[tmid][slot_key] = dict(lesson_dict)
 
         department_teachers = []
         for tr in teacher_rows:
             tmid = tr["teacher_id"]
-            lessons = teacher_lessons_map.get(tmid, [])
+            lessons_dict = teacher_lessons_map.get(tmid, {})
+            lessons = list(lessons_dict.values())
             p_url = f"/api/v1/kiosk/photos/{tmid}" if tr["has_photo"] else None
             department_teachers.append({
                 "teacher_id": tmid,
@@ -626,7 +716,11 @@ class KioskRepository:
             cath_name = "Кафедра"
             key = f"{dow}_{cath_name}"
             day_date = monday + timedelta(days=dow - 1)
-            p_meta = periods_map.get(r["period"], {"pair_number": 1, "time_range": "09:00 - 10:35"})
+            p_meta = periods_map.get(r["period"]) or (
+                {"pair_number": r["period"], "time_range": f"{r['period']}-я пара"}
+                if isinstance(r["period"], int) and 1 <= r["period"] <= 4
+                else {"pair_number": 1, "time_range": "09:00 - 10:35"}
+            )
             fac_name, fac_color = resolve_faculty(r["faculty_short"])
             p_num = p_meta["pair_number"]
 

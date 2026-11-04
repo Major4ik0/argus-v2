@@ -1,19 +1,29 @@
 # backend/app/api/v1/admin.py
 # -*- coding: utf-8 -*-
 import os
+import sys
 import json
 import secrets
-from typing import List
+import platform
+from typing import List, Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status
+import cv2
+import asyncpg
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 
 from ...services.ad_auth import authenticate_ad
 from ...core.config import settings
+from ...core.database import get_db_connection
+from ...services.camera import camera_service as face_recognition_service
+from ...repositories.kiosk import KioskRepository
 
 router = APIRouter()
 
-ADMINS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "admins.json")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+ADMINS_FILE = os.path.join(DATA_DIR, "admins.json")
+SETTINGS_FILE = os.path.join(DATA_DIR, "site_settings.json")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 SUPERADMINS = {
     "24-zhuravlev.a.d",
@@ -22,20 +32,63 @@ SUPERADMINS = {
 }
 
 
+class AdminPermissions(BaseModel):
+    can_view_admin: bool = True
+    can_edit_schedule: bool = True
+    can_manage_kiosk: bool = True
+    can_manage_theming: bool = True
+
+
 def _load_admins() -> list:
     if os.path.exists(ADMINS_FILE):
         try:
             with open(ADMINS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                admins = json.load(f)
         except Exception:
-            return []
-    return []
+            admins = []
+    else:
+        admins = []
+
+    for a in admins:
+        if "permissions" not in a:
+            a["permissions"] = {
+                "can_view_admin": True,
+                "can_edit_schedule": True,
+                "can_manage_kiosk": True,
+                "can_manage_theming": True,
+            }
+        else:
+            for k in ["can_view_admin", "can_edit_schedule", "can_manage_kiosk", "can_manage_theming"]:
+                if k not in a["permissions"]:
+                    a["permissions"][k] = True
+    return admins
 
 
 def _save_admins(admins: list):
-    os.makedirs(os.path.dirname(ADMINS_FILE), exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     with open(ADMINS_FILE, "w", encoding="utf-8") as f:
         json.dump(admins, f, ensure_ascii=False, indent=2)
+
+
+def _load_site_settings() -> dict:
+    defaults = {
+        "site_theme": "light",
+        "kiosk_theme": "light",
+    }
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                defaults.update(data)
+        except Exception:
+            pass
+    return defaults
+
+
+def _save_site_settings(data: dict):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def is_user_admin(username: str) -> bool:
@@ -50,6 +103,33 @@ def is_superadmin(username: str) -> bool:
     return username.strip().lower() in SUPERADMINS
 
 
+def get_user_permissions(username: str) -> Dict[str, bool]:
+    u = username.strip().lower()
+    if is_superadmin(u):
+        return {
+            "can_view_admin": True,
+            "can_edit_schedule": True,
+            "can_manage_kiosk": True,
+            "can_manage_theming": True,
+        }
+    admins = _load_admins()
+    for a in admins:
+        if a.get("username", "").lower() == u:
+            perms = a.get("permissions", {})
+            return {
+                "can_view_admin": bool(perms.get("can_view_admin", True)),
+                "can_edit_schedule": bool(perms.get("can_edit_schedule", True)),
+                "can_manage_kiosk": bool(perms.get("can_manage_kiosk", True)),
+                "can_manage_theming": bool(perms.get("can_manage_theming", True)),
+            }
+    return {
+        "can_view_admin": False,
+        "can_edit_schedule": False,
+        "can_manage_kiosk": False,
+        "can_manage_theming": False,
+    }
+
+
 class LoginRequest(BaseModel):
     login: str
     password: str
@@ -62,17 +142,36 @@ class LoginResponse(BaseModel):
     username: str
     token: str
     message: str
+    permissions: AdminPermissions
 
 
 class AdminUserItem(BaseModel):
     username: str
     added_by: str
     created_at: str
+    is_superadmin: bool = False
+    permissions: AdminPermissions
 
 
 class AddAdminRequest(BaseModel):
     username: str
     current_user: str
+    permissions: Optional[AdminPermissions] = None
+
+
+class UpdatePermissionsRequest(BaseModel):
+    current_user: str
+    permissions: AdminPermissions
+
+
+class SiteSettingsResponse(BaseModel):
+    site_theme: str = "light"
+    kiosk_theme: str = "light"
+
+
+class UpdateSiteSettingsRequest(BaseModel):
+    site_theme: Optional[str] = None
+    kiosk_theme: Optional[str] = None
 
 
 @router.post("/login", response_model=LoginResponse, summary="Авторизация через доменную сеть")
@@ -97,6 +196,7 @@ async def login(payload: LoginRequest):
     # 2. Определение прав
     user_is_admin = is_user_admin(username)
     user_is_super = is_superadmin(username)
+    perms_dict = get_user_permissions(username)
 
     token = secrets.token_hex(32)
 
@@ -106,16 +206,49 @@ async def login(payload: LoginRequest):
         is_superadmin=user_is_super,
         username=username,
         token=token,
-        message="Авторизация успешна"
+        message="Авторизация успешна",
+        permissions=AdminPermissions(**perms_dict)
     )
 
 
-@router.get("/users", response_model=List[AdminUserItem], summary="Список администраторов")
+@router.get("/users", response_model=List[AdminUserItem], summary="Список администраторов с правами")
 async def list_admins():
-    return _load_admins()
+    raw = _load_admins()
+    result = []
+    # Добавляем суперпользователя в список для видимости
+    for sa in sorted(list(SUPERADMINS)):
+        if not any(a["username"].lower() == sa.lower() for a in raw):
+            result.append(AdminUserItem(
+                username=sa,
+                added_by="Система",
+                created_at="Бессрочно",
+                is_superadmin=True,
+                permissions=AdminPermissions(
+                    can_view_admin=True,
+                    can_edit_schedule=True,
+                    can_manage_kiosk=True,
+                    can_manage_theming=True
+                )
+            ))
+
+    for a in raw:
+        perms = a.get("permissions", {})
+        result.append(AdminUserItem(
+            username=a["username"],
+            added_by=a.get("added_by", "admin"),
+            created_at=a.get("created_at", ""),
+            is_superadmin=is_superadmin(a["username"]),
+            permissions=AdminPermissions(
+                can_view_admin=bool(perms.get("can_view_admin", True)),
+                can_edit_schedule=bool(perms.get("can_edit_schedule", True)),
+                can_manage_kiosk=bool(perms.get("can_manage_kiosk", True)),
+                can_manage_theming=bool(perms.get("can_manage_theming", True))
+            )
+        ))
+    return result
 
 
-@router.post("/users/add", summary="Назначение администратора")
+@router.post("/users/add", summary="Назначение администратора с выбором прав")
 async def add_admin(payload: AddAdminRequest):
     if not is_superadmin(payload.current_user):
         raise HTTPException(
@@ -128,15 +261,62 @@ async def add_admin(payload: AddAdminRequest):
         raise HTTPException(status_code=400, detail="Укажите логин")
 
     admins = _load_admins()
-    if not any(a["username"].lower() == target_user for a in admins):
+    perms_dict = payload.permissions.dict() if payload.permissions else {
+        "can_view_admin": True,
+        "can_edit_schedule": True,
+        "can_manage_kiosk": True,
+        "can_manage_theming": True,
+    }
+
+    found = False
+    for a in admins:
+        if a["username"].lower() == target_user:
+            a["permissions"] = perms_dict
+            found = True
+            break
+
+    if not found:
         admins.append({
             "username": target_user,
             "added_by": payload.current_user,
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "permissions": perms_dict
         })
-        _save_admins(admins)
 
-    return {"success": True, "message": f"Пользователь {target_user} добавлен"}
+    _save_admins(admins)
+    return {"success": True, "message": f"Пользователь {target_user} успешно обновлен"}
+
+
+@router.put("/users/{username}/permissions", summary="Изменение прав пользователя")
+async def update_permissions(username: str, payload: UpdatePermissionsRequest):
+    if not is_superadmin(payload.current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Только главный администратор может изменять права"
+        )
+
+    u = username.strip().lower()
+    if is_superadmin(u):
+        raise HTTPException(status_code=400, detail="Права главного администратора не подлежат ограничению")
+
+    admins = _load_admins()
+    updated = False
+    for a in admins:
+        if a["username"].lower() == u:
+            a["permissions"] = payload.permissions.dict()
+            updated = True
+            break
+
+    if not updated:
+        admins.append({
+            "username": u,
+            "added_by": payload.current_user,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "permissions": payload.permissions.dict()
+        })
+
+    _save_admins(admins)
+    return {"success": True, "message": f"Права пользователя {u} обновлены"}
 
 
 @router.delete("/users/{username}", summary="Отзыв прав администратора")
@@ -148,7 +328,7 @@ async def remove_admin(username: str, current_user: str):
         )
 
     u = username.strip().lower()
-    if u in SUPERADMINS:
+    if is_superadmin(u):
         raise HTTPException(status_code=400, detail="Невозможно удалить главного администратора")
 
     admins = _load_admins()
@@ -156,3 +336,109 @@ async def remove_admin(username: str, current_user: str):
     _save_admins(new_admins)
 
     return {"success": True, "message": f"Права пользователя {username} отозваны"}
+
+
+@router.get("/settings", response_model=SiteSettingsResponse, summary="Текущие настройки тем оформления сайта и табло")
+async def get_site_settings():
+    return _load_site_settings()
+
+
+@router.post("/settings", response_model=SiteSettingsResponse, summary="Сохранение настроек тем оформления сайта и табло")
+async def update_site_settings(payload: UpdateSiteSettingsRequest):
+    current = _load_site_settings()
+    if payload.site_theme in ("light", "dark"):
+        current["site_theme"] = payload.site_theme
+    if payload.kiosk_theme in ("light", "dark"):
+        current["kiosk_theme"] = payload.kiosk_theme
+    _save_site_settings(current)
+
+    # Оповещаем все открытые экраны табло через WebSocket об изменении темы
+    try:
+        face_recognition_service.ws_manager.broadcast_from_thread({
+            "event": "THEME_CHANGED",
+            "kiosk_theme": current["kiosk_theme"],
+            "site_theme": current["site_theme"],
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    except Exception:
+        pass
+
+    return current
+
+
+@router.get("/monitoring", summary="Сводный мониторинг работы сайта, БД и камеры")
+async def get_system_monitoring(conn: asyncpg.Connection = Depends(get_db_connection)):
+    """
+    Возвращает статус работоспособности всех узлов:
+    - База данных PostgreSQL (количество занятий, преподавателей, звонков)
+    - Видеосервис и распознавание лиц (статус камеры, модель, эталоны, порог)
+    - Статистика терминала (посещения за сегодня, неделю, всего)
+    - Последние логи фиксаций в реальном времени
+    - Сведения об операционной системе и окружении
+    """
+    repo = KioskRepository(conn)
+    kiosk_stats = await repo.get_stats()
+
+    # База данных
+    lessons_count = await conn.fetchval("SELECT count(*) FROM public.nnz_schedule;")
+    teachers_count = await conn.fetchval("SELECT count(DISTINCT mid) FROM public.cathedra_personnel WHERE id_pmk IN (1, 2);")
+    enrolled_count = await conn.fetchval("SELECT count(*) FROM public.teacher_biometrics WHERE embedding IS NOT NULL;")
+
+    # Камера и AI
+    vision_status = {
+        "is_active": face_recognition_service.is_active,
+        "is_running": face_recognition_service._running,
+        "camera_source": face_recognition_service.camera_source,
+        "recognition_threshold": face_recognition_service.recognition_threshold,
+        "detector_model": "OpenCV YuNet (face_detection_yunet.onnx)",
+        "recognizer_model": "OpenCV SFace (face_recognition_sface.onnx)",
+        "enrolled_teachers_count": len(face_recognition_service.known_teachers),
+        "active_teacher_id": face_recognition_service._active_teacher_id,
+        "ws_active_clients": len(face_recognition_service.ws_manager.active_connections),
+    }
+
+    # Последние подходы
+    recent_logs = await conn.fetch("""
+        SELECT 
+            kl.id,
+            kl.teacher_id,
+            TRIM(CONCAT_WS(' ', p.lastname, p.firstname, p.patronymic)) AS full_name,
+            ad.shortname AS academic_degree,
+            kl.confidence,
+            kl.recognized_at
+        FROM public.kiosk_recognition_logs kl
+        JOIN public.people p ON kl.teacher_id = p.mid
+        LEFT JOIN public.academicdegree ad ON p.degree = ad.agid
+        ORDER BY kl.recognized_at DESC
+        LIMIT 10;
+    """)
+
+    logs_list = []
+    for r in recent_logs:
+        logs_list.append({
+            "id": r["id"],
+            "teacher_id": r["teacher_id"],
+            "teacher_name": r["full_name"],
+            "academic_degree": r["academic_degree"],
+            "confidence": round(float(r["confidence"] or 0.0), 3),
+            "recognized_at": r["recognized_at"].strftime("%d.%m.%Y %H:%M:%S") if r["recognized_at"] else "",
+        })
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "database": {
+            "status": "connected",
+            "total_lessons": lessons_count or 0,
+            "total_department_teachers": teachers_count or 0,
+            "teachers_with_biometrics": enrolled_count or 0,
+        },
+        "vision": vision_status,
+        "kiosk_stats": kiosk_stats,
+        "recent_logs": logs_list,
+        "system": {
+            "os": f"{platform.system()} {platform.release()}",
+            "python": sys.version.split()[0],
+            "opencv": getattr(cv2, "__version__", "unknown"),
+        },
+    }

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { ScheduleEvent } from '../types/schedule'
 import { Copy, Scissors, Trash2, MoreVertical, Edit3, ArrowLeftRight } from 'lucide-react'
+import { renderGroupBadge } from '../utils/groupFormat'
 
 export interface ModernCardProps {
   event: ScheduleEvent
@@ -56,8 +57,11 @@ export const ModernCard: React.FC<ModernCardProps> = ({
     event.auditory ||
     (Array.isArray(event.all_rooms) && event.all_rooms[0]) ||
     'Ауд.'
-  const groupStr =
-    event.group_name || (Array.isArray(event.all_groups) && event.all_groups[0]) || 'Группа'
+  const groupBadge = renderGroupBadge(event.all_groups || event.group_name)
+  const allGroupsTooltip =
+    Array.isArray(event.all_groups) && event.all_groups.length > 0
+      ? event.all_groups.join(', ')
+      : event.group_name || ''
   const courseStr =
     event.course_alias ||
     event.course_name ||
@@ -104,12 +108,12 @@ export const ModernCard: React.FC<ModernCardProps> = ({
         isAdmin ? 'cursor-grab active:cursor-grabbing hover:scale-[1.02]' : 'hover:scale-[1.02]'
       } ${
         isSwapMode
-          ? 'ring-2 ring-amber-400 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer'
+          ? 'ring-2 ring-amber-500 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer'
           : isSelected
-          ? 'ring-2 ring-sky-400 border-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.5)]'
+          ? 'ring-2 ring-sky-500 border-sky-500 shadow-[0_0_12px_rgba(56,189,248,0.5)]'
           : isCut
-          ? 'border-dashed border-amber-400/80 opacity-70 animate-pulse'
-          : 'border-slate-800/40'
+          ? 'border-dashed border-amber-500 opacity-70 animate-pulse'
+          : 'border-slate-300/80'
       } ${isDense ? 'p-1' : 'p-1.5'}`}
       style={{ backgroundColor: facultyColor }}
       title={
@@ -126,7 +130,7 @@ export const ModernCard: React.FC<ModernCardProps> = ({
           <button
             ref={buttonRef}
             onClick={handleToggleMenu}
-            className="p-1 rounded-md bg-slate-900/80 hover:bg-slate-900 text-slate-200 shadow-sm"
+            className="p-1 rounded-md bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-300 shadow-sm"
             title="Меню действий"
           >
             <MoreVertical className="w-3 h-3" />
@@ -141,22 +145,25 @@ export const ModernCard: React.FC<ModernCardProps> = ({
       )}
 
       {/* 1. Тип занятия и номер */}
-      <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
+      <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words">
         {lessonTypeStr}
       </div>
 
       {/* 2. Номер аудитории */}
-      <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
+      <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words">
         {roomStr}
       </div>
 
-      {/* 3. Номер учебной группы */}
-      <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
-        {groupStr}
+      {/* 3. Номер учебной группы / Поток */}
+      <div
+        className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words"
+        title={allGroupsTooltip}
+      >
+        {groupBadge}
       </div>
 
       {/* 4. Шифр дисциплины */}
-      <div className="w-full max-w-[125px] bg-white text-slate-900 rounded-full py-0.5 px-2 text-center text-[11px] font-bold shadow-sm leading-tight break-words">
+      <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words">
         {courseStr}
       </div>
 
@@ -174,7 +181,7 @@ export const ModernCard: React.FC<ModernCardProps> = ({
             />
             <div
               style={{ top: `${menuCoords.top}px`, left: `${menuCoords.left}px` }}
-              className="fixed z-[9999] w-36 rounded-xl bg-slate-950/95 border border-slate-700/80 p-1 shadow-2xl backdrop-blur-md space-y-0.5 text-[11px]"
+              className="fixed z-[9999] w-36 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-1 shadow-2xl space-y-0.5 text-xs text-slate-800 dark:text-slate-200"
               onClick={(e) => e.stopPropagation()}
             >
               <button
@@ -183,9 +190,9 @@ export const ModernCard: React.FC<ModernCardProps> = ({
                   setShowMenu(false)
                   onEdit?.(event)
                 }}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-sky-300 hover:bg-slate-800 rounded-lg transition"
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-slate-700 hover:text-sky-600 hover:bg-slate-100 rounded-lg transition"
               >
-                <Edit3 className="w-3 h-3" />
+                <Edit3 className="w-3.5 h-3.5 text-sky-600" />
                 <span>Изменить</span>
               </button>
 
@@ -195,9 +202,9 @@ export const ModernCard: React.FC<ModernCardProps> = ({
                   setShowMenu(false)
                   onSwap?.(event)
                 }}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-amber-300 hover:bg-amber-500/15 rounded-lg transition"
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-slate-700 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition"
               >
-                <ArrowLeftRight className="w-3 h-3 text-amber-400" />
+                <ArrowLeftRight className="w-3.5 h-3.5 text-amber-600" />
                 <span>Замена</span>
               </button>
 
@@ -207,9 +214,9 @@ export const ModernCard: React.FC<ModernCardProps> = ({
                   setShowMenu(false)
                   onCopy?.(event)
                 }}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-slate-300 hover:bg-slate-800 rounded-lg transition"
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-slate-700 hover:text-sky-600 hover:bg-slate-100 rounded-lg transition"
               >
-                <Copy className="w-3 h-3 text-sky-400" />
+                <Copy className="w-3.5 h-3.5 text-sky-600" />
                 <span>Копировать</span>
               </button>
 
@@ -219,13 +226,13 @@ export const ModernCard: React.FC<ModernCardProps> = ({
                   setShowMenu(false)
                   onCut?.(event)
                 }}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-slate-300 hover:bg-slate-800 rounded-lg transition"
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-slate-700 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition"
               >
-                <Scissors className="w-3 h-3 text-amber-400" />
+                <Scissors className="w-3.5 h-3.5 text-amber-600" />
                 <span>Вырезать</span>
               </button>
 
-              <div className="h-px bg-slate-800 my-0.5" />
+              <div className="h-px bg-slate-200 dark:bg-slate-800 my-0.5" />
 
               <button
                 onClick={(e) => {
@@ -233,9 +240,9 @@ export const ModernCard: React.FC<ModernCardProps> = ({
                   setShowMenu(false)
                   onDelete?.(eventId)
                 }}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                 <span>Удалить</span>
               </button>
             </div>

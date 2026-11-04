@@ -15,7 +15,7 @@ def _sync_authenticate_ad(username: str, password: str) -> bool:
         dev_pass = getattr(settings, "dev_password", "admin")
         initial_admin = getattr(settings, "initial_admin", "admin")
         if clean_user.lower() == initial_admin.lower() and clean_pass == dev_pass:
-            print(f"🔧 [AUTH DEV] Вход через DEV-пароль: {clean_user}")
+            print(f"[AUTH DEV] Вход через DEV-пароль: {clean_user}")
             return True
 
     server_ip = settings.ad_server
@@ -61,7 +61,7 @@ def _sync_authenticate_ad(username: str, password: str) -> bool:
 
                 if bound:
                     conn.unbind()
-                    print(f"✅ [AUTH LDAP] Успешная авторизация: {principal}")
+                    print(f"[AUTH LDAP] Успешная авторизация: {principal}")
                     return True
                 else:
                     # Выводим точный ответ от сервера
@@ -73,11 +73,11 @@ def _sync_authenticate_ad(username: str, password: str) -> bool:
                 print(f"   ↳ Ошибка при попытке {principal}: {conn_err}")
                 continue
 
-        print(f"❌ [AUTH LDAP] Доступ запрещен для пользователя: {clean_user}")
+        print(f"[AUTH LDAP] Доступ запрещен для пользователя: {clean_user}")
         return False
 
     except Exception as e:
-        print(f"❌ [AUTH LDAP] Ошибка сетевого соединения с {server_ip}: {e}")
+        print(f"[AUTH LDAP] Ошибка сетевого соединения с {server_ip}: {e}")
         return False
 
 

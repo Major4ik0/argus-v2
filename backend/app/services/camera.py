@@ -7,6 +7,7 @@ import logging
 import platform
 import threading
 import asyncio
+from collections import deque, Counter
 from typing import List, Dict, Any, Optional, Tuple, Callable
 import cv2
 import numpy as np
@@ -15,184 +16,88 @@ logger = logging.getLogger("argus.camera")
 logger.setLevel(logging.INFO)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODELS_DIR = os.path.join(BASE_DIR, "models", "insightface", "models", "buffalo_l")
-DET_MODEL_PATH = os.path.join(MODELS_DIR, "det_10g.onnx")
-REC_MODEL_PATH = os.path.join(MODELS_DIR, "w600k_r50.onnx")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+YUNET_PATH = os.path.join(MODELS_DIR, "face_detection_yunet.onnx")
+SFACE_PATH = os.path.join(MODELS_DIR, "face_recognition_sface.onnx")
 PHOTOS_DIR = os.path.join(BASE_DIR, "uploads", "photos")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 
-class SCRFDFaceDetector:
-    """Детектор лиц SCRFD (ONNX Runtime, CPU) с мягким отказоустойчивым fallback."""
-    def __init__(self, model_path: str = DET_MODEL_PATH):
-        self.model_path = model_path
-        self.session = None
-        self.input_name = None
-        self.input_size = (640, 640)
-        self._init_session()
+class OpenCVFaceVision:
+    """Детектор лиц YuNet и экстрактор признаков SFace через нативный OpenCV 5 DNN."""
+    def __init__(self, yunet_path: str = YUNET_PATH, sface_path: str = SFACE_PATH):
+        self.yunet_path = yunet_path
+        self.sface_path = sface_path
+        self.detector = None
+        self.recognizer = None
+        self._lock = threading.Lock()
+        self._init_models()
 
-    def _init_session(self):
+    def _init_models(self):
         try:
-            import onnxruntime as ort
-            if os.path.exists(self.model_path):
-                opts = ort.SessionOptions()
-                opts.intra_op_num_threads = 2
-                self.session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
-                self.input_name = self.session.get_inputs()[0].name
-                print(f"✅ [SCRFD-10G] Модель успешно загружена: {self.model_path}")
-            else:
-                print(f"⚠️ [SCRFD-10G] Веса детектора не найдены ({self.model_path}). Режим совместимости без нейросети.")
-        except Exception as e:
-            print(f"⚠️ [SCRFD-10G] ONNX Runtime недоступен: {e}. Видеопоток работает в штатном режиме.")
-
-    def detect(self, img: np.ndarray, threshold: float = 0.45) -> List[Tuple[int, int, int, int]]:
-        if img is None or img.size == 0:
-            return []
-        h, w = img.shape[:2]
-
-        if self.session is not None:
-            try:
-                im_ratio = float(h) / float(w)
-                model_ratio = float(self.input_size[1]) / float(self.input_size[0])
-                if im_ratio > model_ratio:
-                    new_h = self.input_size[1]
-                    new_w = int(new_h / im_ratio)
-                else:
-                    new_w = self.input_size[0]
-                    new_h = int(new_w * im_ratio)
-
-                resized_img = cv2.resize(img, (new_w, new_h))
-                det_img = np.zeros((self.input_size[1], self.input_size[0], 3), dtype=np.uint8)
-                det_img[0:new_h, 0:new_w, :] = resized_img
-
-                blob = cv2.dnn.blobFromImage(
-                    det_img, 1.0 / 128.0, self.input_size, (127.5, 127.5, 127.5), swapRB=True
+            if os.path.exists(self.yunet_path) and hasattr(cv2, "FaceDetectorYN"):
+                self.detector = cv2.FaceDetectorYN.create(
+                    self.yunet_path, "", (320, 320), score_threshold=0.15, nms_threshold=0.3, top_k=5000
                 )
-                net_outs = self.session.run(None, {self.input_name: blob})
-
-                scores_list = []
-                bboxes_list = []
-                for out in net_outs:
-                    if len(out.shape) == 2 and out.shape[1] == 1:
-                        scores_list.append(out)
-                    elif len(out.shape) == 2 and out.shape[1] == 4:
-                        bboxes_list.append(out)
-
-                scale = float(new_w) / float(w)
-                boxes = []
-                if scores_list and bboxes_list:
-                    for score_arr, box_arr in zip(scores_list, bboxes_list):
-                        for s, b in zip(score_arr, box_arr):
-                            if s[0] >= threshold:
-                                bx = int(b[0] / scale)
-                                by = int(b[1] / scale)
-                                bw = int((b[2] - b[0]) / scale)
-                                bh = int((b[3] - b[1]) / scale)
-                                boxes.append((max(0, bx), max(0, by), max(10, bw), max(10, bh)))
-                if boxes:
-                    return boxes
-            except Exception:
-                pass
-
-        # Мягкий режим совместимости: детекция по цветовым градиентам
-        try:
-            ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
-            mask = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            candidates = []
-            min_area = (h * w) * 0.03
-            max_area = (h * w) * 0.85
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if min_area <= area <= max_area:
-                    x, y, bw, bh = cv2.boundingRect(cnt)
-                    aspect = bh / float(bw)
-                    if 1.0 <= aspect <= 2.0:
-                        candidates.append((x, y, bw, bh))
-            if candidates:
-                candidates.sort(key=lambda b: b[2] * b[3], reverse=True)
-                return [candidates[0]]
-        except Exception:
-            pass
-
-        return [(int(w * 0.15), int(h * 0.1), int(w * 0.7), int(h * 0.8))]
-
-
-class ArcFaceFeatureExtractor:
-    """Экстрактор признаков ArcFace ResNet-50 (512-мерный вектор, L2-норма)."""
-    def __init__(self, model_path: str = REC_MODEL_PATH):
-        self.model_path = model_path
-        self.session = None
-        self.input_name = None
-        self._init_session()
-
-    def _init_session(self):
-        try:
-            import onnxruntime as ort
-            if os.path.exists(self.model_path):
-                opts = ort.SessionOptions()
-                opts.intra_op_num_threads = 2
-                self.session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
-                self.input_name = self.session.get_inputs()[0].name
-                print(f"✅ [ArcFace] Модель распознавания успешно загружена: {self.model_path}")
+                print(f"[YuNet] Детектор лиц успешно загружен: {self.yunet_path}")
             else:
-                print(f"⚠️ [ArcFace] Веса распознавания не найдены ({self.model_path}). Режим совместимости.")
+                print(f"[YuNet] Веса детектора не найдены ({self.yunet_path}).")
+
+            if os.path.exists(self.sface_path) and hasattr(cv2, "FaceRecognizerSF"):
+                self.recognizer = cv2.FaceRecognizerSF.create(self.sface_path, "")
+                print(f"[SFace] Модель распознавания лиц успешно загружена: {self.sface_path}")
+            else:
+                print(f"[SFace] Веса распознавания не найдены ({self.sface_path}).")
         except Exception as e:
-            print(f"⚠️ [ArcFace] ONNX Runtime недоступен: {e}. Экстрактор переключен в fallback режим.")
+            print(f"[OpenCV FaceVision] Ошибка загрузки моделей: {e}")
 
-    def extract(self, face_crop: np.ndarray) -> np.ndarray:
-        if face_crop is None or face_crop.size == 0:
-            return np.zeros(512, dtype=np.float32)
+    def detect_and_align(self, img_bgr: np.ndarray) -> List[Tuple[Tuple[int, int, int, int], np.ndarray, float]]:
+        """
+        Обнаружение лиц и выравнивание через landmark crop.
+        Возвращает: [(bbox, aligned_face, score), ...]
+        """
+        if img_bgr is None or img_bgr.size == 0 or self.detector is None or self.recognizer is None:
+            return []
 
-        if self.session is not None:
+        h, w = img_bgr.shape[:2]
+        with self._lock:
             try:
-                face = cv2.resize(face_crop, (112, 112))
-                face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-                face = np.transpose(face, (2, 0, 1))
-                face = np.expand_dims(face, axis=0).astype(np.float32)
-                face = (face - 127.5) / 127.5
+                self.detector.setInputSize((w, h))
+                _, faces = self.detector.detect(img_bgr)
+                if faces is None or len(faces) == 0:
+                    return []
 
-                feat = self.session.run(None, {self.input_name: face})[0][0]
+                results = []
+                for face in faces:
+                    score = float(face[-1])
+                    if score < 0.15:
+                        continue
+                    bx = max(0, int(face[0]))
+                    by = max(0, int(face[1]))
+                    bw = max(10, int(face[2]))
+                    bh = max(10, int(face[3]))
+                    aligned = self.recognizer.alignCrop(img_bgr, face)
+                    results.append(((bx, by, bw, bh), aligned, score))
+                return results
+            except Exception as e:
+                logger.warning(f"Ошибка инференса OpenCV FaceVision: {e}")
+                return []
+
+    def extract_feature(self, aligned_face: np.ndarray) -> np.ndarray:
+        """Извлечение 128-мерного L2-нормализованного вектора SFace."""
+        if aligned_face is None or aligned_face.size == 0 or self.recognizer is None:
+            return np.zeros(128, dtype=np.float32)
+        with self._lock:
+            try:
+                feat = self.recognizer.feature(aligned_face)
                 norm = np.linalg.norm(feat)
                 if norm > 1e-6:
                     feat = feat / norm
-                return feat.astype(np.float32)
-            except Exception:
-                pass
-
-        # Детерминированный дескриптор 512-D
-        try:
-            gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, (112, 112))
-            gray = cv2.equalizeHist(gray)
-            gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-            gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-            mag, ang = cv2.cartToPolar(gx, gy, angleInDegrees=True)
-
-            cells_x, cells_y = 8, 8
-            bins_per_cell = 8
-            w_step = 112 // cells_x
-            h_step = 112 // cells_y
-            descriptor = np.zeros(512, dtype=np.float32)
-            idx = 0
-            for i in range(cells_y):
-                for j in range(cells_x):
-                    cell_mag = mag[i * h_step:(i + 1) * h_step, j * w_step:(j + 1) * w_step]
-                    cell_ang = ang[i * h_step:(i + 1) * h_step, j * w_step:(j + 1) * w_step]
-                    hist, _ = np.histogram(cell_ang, bins=bins_per_cell, range=(0, 360), weights=cell_mag)
-                    descriptor[idx:idx + bins_per_cell] = hist
-                    idx += bins_per_cell
-
-            norm = np.linalg.norm(descriptor)
-            if norm > 1e-6:
-                descriptor = descriptor / norm
-            return descriptor.astype(np.float32)
-        except Exception:
-            vec = np.random.uniform(-1, 1, 512).astype(np.float32)
-            return vec / np.linalg.norm(vec)
+                return feat.flatten().astype(np.float32)
+            except Exception as e:
+                logger.warning(f"Ошибка вычисления вектора SFace: {e}")
+                return np.zeros(128, dtype=np.float32)
 
 
 class KioskWebSocketManager:
@@ -209,13 +114,13 @@ class KioskWebSocketManager:
         await websocket.accept()
         with self._lock:
             self.active_connections.append(websocket)
-        print(f"📡 [Kiosk WS] Экран подключен. Активных клиентов: {len(self.active_connections)}")
+        print(f"[Kiosk WS] Экран подключен. Активных клиентов: {len(self.active_connections)}")
 
     def disconnect(self, websocket: Any):
         with self._lock:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
-        print(f"📡 [Kiosk WS] Экран отключен. Осталось клиентов: {len(self.active_connections)}")
+        print(f"[Kiosk WS] Экран отключен. Осталось клиентов: {len(self.active_connections)}")
 
     async def broadcast(self, message: dict):
         dead_conns = []
@@ -242,20 +147,22 @@ class KioskWebSocketManager:
 class FaceRecognitionCamera:
     """
     Основной модуль захвата видео и распознавания лиц для инфокиоска:
+    - Высокоточный детектор YuNet и распознавание SFace (OpenCV DNN).
     - Интеллектуальный поиск камеры (перебор индексов 0, 1, 2, AVFoundation на macOS).
     - Раздельные потоки захвата и инференса.
-    - Кулдаун фиксации подходов 30 секунд.
+    - Кулдаун фиксации подходов 15 секунд.
     - Непрерывный MJPEG-стриминг и WebSocket-оповещения.
     """
     def __init__(self):
-        self.detector = SCRFDFaceDetector()
-        self.extractor = ArcFaceFeatureExtractor()
+        self.vision = OpenCVFaceVision()
+        self.detector = self.vision
+        self.extractor = self.vision
         self.ws_manager = KioskWebSocketManager()
 
         self.camera_source: str = "0"
         self.video_source: str = "0"
-        self.recognition_threshold: float = 0.48
-        self.idle_timeout: int = 20
+        self.recognition_threshold: float = 0.32  # Сбалансированный порог для уверенного распознавания SFace
+        self.idle_timeout: int = 6  # Тайм-аут ухода преподавателя от камеры (секунд)
         self.is_active: bool = True
 
         self._running: bool = False
@@ -272,11 +179,15 @@ class FaceRecognitionCamera:
 
         self.known_teachers: List[Dict[str, Any]] = []
         self._teachers_lock = threading.Lock()
+        self.flip_horizontal: bool = True
 
+        # Сглаживание предсказаний и кулдауны
+        self._history: deque = deque(maxlen=5)
         self._last_detected_id: Optional[int] = None
         self._consecutive_hits: int = 0
         self._active_teacher_id: Optional[int] = None
         self._last_seen_time: float = 0.0
+        self._last_ws_send_time: float = 0.0
         self._last_visit_time: Dict[int, float] = {}
 
         self.log_callback: Optional[Callable[[int, float], Any]] = None
@@ -293,10 +204,10 @@ class FaceRecognitionCamera:
         self.log_callback = cb
 
     def register_visit(self, teacher_id: int, confidence: float) -> bool:
-        """Регистрация визита преподавателя к табло с защитой от накрутки (кулдаун 30 сек)."""
+        """Регистрация визита преподавателя к табло с защитой от накрутки (кулдаун 15 сек)."""
         now = time.time()
         last = self._last_visit_time.get(teacher_id, 0.0)
-        if now - last < 30.0:
+        if now - last < 15.0:
             return False
 
         self._last_visit_time[teacher_id] = now
@@ -312,8 +223,33 @@ class FaceRecognitionCamera:
         loaded = []
         for r in db_rows:
             emb_bytes = r.get("embedding")
-            if emb_bytes and len(emb_bytes) >= 2048:
-                vec = np.frombuffer(emb_bytes[:2048], dtype=np.float32)
+            vec = None
+            if emb_bytes:
+                if len(emb_bytes) == 512:
+                    # 128 float32 чисел (нативный SFace)
+                    vec = np.frombuffer(emb_bytes, dtype=np.float32).copy()
+                elif len(emb_bytes) >= 2048:
+                    # Если сохранился старый 512-мерный вектор, пробуем пересчитать из файла фото
+                    p_name = r.get("photo_path")
+                    if p_name:
+                        p_file = os.path.join(PHOTOS_DIR, p_name)
+                        if os.path.exists(p_file):
+                            p_img = cv2.imread(p_file)
+                            if p_img is not None:
+                                e_bytes, _ = self.compute_embedding_from_image(p_img)
+                                vec = np.frombuffer(e_bytes, dtype=np.float32).copy()
+                                print(f"[База биометрии] Пересчитан вектор SFace для преподавателя #{r['teacher_id']}")
+                    if vec is None:
+                        vec = np.frombuffer(emb_bytes[:512], dtype=np.float32).copy()
+            elif r.get("photo_path"):
+                p_file = os.path.join(PHOTOS_DIR, r["photo_path"])
+                if os.path.exists(p_file):
+                    p_img = cv2.imread(p_file)
+                    if p_img is not None:
+                        e_bytes, _ = self.compute_embedding_from_image(p_img)
+                        vec = np.frombuffer(e_bytes, dtype=np.float32).copy()
+
+            if vec is not None:
                 norm = np.linalg.norm(vec)
                 if norm > 1e-6:
                     vec = vec / norm
@@ -325,27 +261,21 @@ class FaceRecognitionCamera:
                 })
         with self._teachers_lock:
             self.known_teachers = loaded
-        print(f"👥 [База биометрии] Загружено {len(loaded)} эталонов преподавателей.")
+        print(f"[База биометрии] Загружено {len(loaded)} эталонов преподавателей.")
 
     def compute_embedding_from_image(self, img_bgr: np.ndarray) -> Tuple[bytes, Tuple[int, int, int, int]]:
-        boxes = self.detector.detect(img_bgr, threshold=0.45)
-        h, w = img_bgr.shape[:2]
-        if boxes:
-            x, y, bw, bh = boxes[0]
-            pad_x = int(bw * 0.15)
-            pad_y = int(bh * 0.15)
-            x1 = max(0, x - pad_x)
-            y1 = max(0, y - pad_y)
-            x2 = min(w, x + bw + pad_x)
-            y2 = min(h, y + bh + pad_y)
-            face_crop = img_bgr[y1:y2, x1:x2]
-            bbox = (x, y, bw, bh)
-        else:
-            face_crop = img_bgr
-            bbox = (0, 0, w, h)
+        if img_bgr is None or img_bgr.size == 0:
+            return np.zeros(128, dtype=np.float32).tobytes(), (0, 0, 100, 100)
 
-        emb = self.extractor.extract(face_crop)
-        return emb.astype(np.float32).tobytes(), bbox
+        h, w = img_bgr.shape[:2]
+        results = self.vision.detect_and_align(img_bgr)
+        if results:
+            results.sort(key=lambda item: item[2], reverse=True)
+            bbox, aligned, score = results[0]
+            feat = self.vision.extract_feature(aligned)
+            return feat.tobytes(), bbox
+
+        return np.zeros(128, dtype=np.float32).tobytes(), (0, 0, w, h)
 
     def save_snapshot(
         self, teacher_id: int, full_name: Optional[str] = None
@@ -355,14 +285,15 @@ class FaceRecognitionCamera:
             return False, "Камера отключена или не захватила кадр", None, None
 
         emb_bytes, bbox = self.compute_embedding_from_image(raw)
+        vec = np.frombuffer(emb_bytes[:512], dtype=np.float32).copy()
+        norm = np.linalg.norm(vec)
+        if norm <= 1e-6:
+            return False, "Лицо не обнаружено в кадре камеры. Пожалуйста, сядьте прямо перед камерой при хорошем освещении и повторите попытку.", None, None
+
+        vec = vec / norm
         photo_filename = f"teacher_{teacher_id}.jpg"
         photo_path = os.path.join(PHOTOS_DIR, photo_filename)
         cv2.imwrite(photo_path, raw, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        vec = np.frombuffer(emb_bytes[:2048], dtype=np.float32)
-        norm = np.linalg.norm(vec)
-        if norm > 1e-6:
-            vec = vec / norm
         with self._teachers_lock:
             found = False
             for item in self.known_teachers:
@@ -386,67 +317,75 @@ class FaceRecognitionCamera:
     def _open_camera(self) -> Optional[cv2.VideoCapture]:
         """
         Открытие камеры с автопоиском доступного индекса (0, 1, 2)
-        и поддержкой AVFoundation на macOS.
+        и поддержкой AVFoundation на macOS с установкой минимального буфера.
         """
         # Если RTSP / HTTP-поток
         src_str = str(getattr(self, "video_source", self.camera_source)).strip()
         if src_str.startswith(('rtsp://', 'http://', 'https://')):
             try:
                 cap = cv2.VideoCapture(src_str)
-                print(f"📹 [CAMERA] Попытка открытия потока {src_str}: isOpened={cap.isOpened()}")
+                logger.info(f"Попытка открытия потока {src_str}: isOpened={cap.isOpened()}")
                 if cap and cap.isOpened():
+                    try:
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
                     return cap
             except Exception as e:
-                print(f"❌ [CAMERA-ERROR] Ошибка подключения к {src_str}: {e}")
+                logger.error(f"Ошибка подключения к {src_str}: {e}")
             return None
 
         # Локальная веб-камера
-        backend = cv2.CAP_AVFOUNDATION if platform.system() == "Darwin" else cv2.CAP_ANY
+        is_darwin = platform.system() == "Darwin"
+        backend = cv2.CAP_AVFOUNDATION if is_darwin else cv2.CAP_ANY
         source_idx = int(src_str) if src_str.isdigit() else 0
 
-        print(f"📷 [CAMERA] Попытка открыть камеру #{source_idx}...")
-        try:
-            cap = cv2.VideoCapture(source_idx, backend)
-        except Exception as e:
-            print(f"⚠️ [CAMERA] Ошибка при открытии #{source_idx}: {e}")
-            cap = None
-
-        # Если не открылась, проверяем альтернативные индексы (1 или 0)
-        if not cap or not cap.isOpened():
-            alt_idx = 1 if source_idx == 0 else 0
-            print(f"⚠️ [CAMERA] Камера #{source_idx} не отвечает. Пробуем индекс #{alt_idx}...")
+        def try_open(idx: int) -> Optional[cv2.VideoCapture]:
             try:
-                cap = cv2.VideoCapture(alt_idx, backend)
-                if cap and cap.isOpened():
-                    self.video_source = str(alt_idx)
-                    self.camera_source = str(alt_idx)
-                    print(f"✅ [CAMERA] Успешно подключена камера #{alt_idx}")
+                c = cv2.VideoCapture(idx, backend)
+                if c and c.isOpened():
+                    try:
+                        c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
+                    return c
             except Exception as e:
-                print(f"⚠️ [CAMERA] Ошибка при открытии #{alt_idx}: {e}")
+                logger.warning(f"Ошибка при открытии камеры #{idx}: {e}")
+            return None
 
-        # Если всё ещё не открылась, проверяем индекс 2
-        if not cap or not cap.isOpened():
-            for extra_idx in [2]:
-                try:
-                    cap = cv2.VideoCapture(extra_idx, backend)
-                    if cap and cap.isOpened():
-                        self.video_source = str(extra_idx)
-                        self.camera_source = str(extra_idx)
-                        print(f"✅ [CAMERA] Успешно подключена камера #{extra_idx}")
-                        break
-                except Exception:
-                    pass
+        logger.info(f"Попытка открыть камеру #{source_idx}...")
+        cap = try_open(source_idx)
+
+        # Fallback на соседний индекс (0 <-> 1)
+        if not cap:
+            alt_idx = 1 if source_idx == 0 else 0
+            logger.info(f"Камера #{source_idx} недоступна. Fallback на #{alt_idx}...")
+            cap = try_open(alt_idx)
+            if cap:
+                self.video_source = str(alt_idx)
+                self.camera_source = str(alt_idx)
+
+        # Если не открылась, проверяем индекс 2
+        if not cap:
+            cap = try_open(2)
+            if cap:
+                self.video_source = "2"
+                self.camera_source = "2"
 
         if cap and cap.isOpened():
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
             try:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
                 cap.set(cv2.CAP_PROP_FPS, 30)
             except Exception:
                 pass
-            print(f"✅ [CAMERA] Камера инициализирована на источнике #{self.camera_source}")
+            logger.info(f"Камера успешно инициализирована на источнике #{self.camera_source}")
         else:
-            print(f"❌ [CAMERA-ERROR] Не удалось открыть ни одну локальную камеру!")
+            logger.error("Не удалось открыть ни одну локальную камеру!")
             cap = None
         return cap
 
@@ -499,7 +438,7 @@ class FaceRecognitionCamera:
         cv2.putText(frame, f"STATUS: STANDBY | TIME: {t_str}", (20, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (148, 163, 184), 1)
         return frame
 
-    def start(self, camera_source: str = "0", threshold: float = 0.48, idle_timeout: int = 20, is_active: bool = True):
+    def start(self, camera_source: str = "0", threshold: float = 0.32, idle_timeout: int = 6, is_active: bool = True, flip_horizontal: bool = True):
         if self._running:
             self.stop()
 
@@ -507,6 +446,7 @@ class FaceRecognitionCamera:
         self.recognition_threshold = threshold
         self.idle_timeout = idle_timeout
         self.is_active = is_active
+        self.flip_horizontal = flip_horizontal
         self._running = True
 
         self._capture_thread = threading.Thread(target=self._capture_loop, name="CameraCaptureThread", daemon=True)
@@ -514,7 +454,10 @@ class FaceRecognitionCamera:
 
         self._capture_thread.start()
         self._process_thread.start()
-        print(f"🚀 Видеомодуль запущен: источник={self.camera_source}, порог={self.recognition_threshold}")
+        print(f"[Камера] Видеомодуль запущен: источник={self.camera_source}, порог={self.recognition_threshold}, зеркало={self.flip_horizontal}")
+
+    def set_flip_horizontal(self, flip: bool):
+        self.flip_horizontal = bool(flip)
 
     def stop(self):
         self._running = False
@@ -529,11 +472,12 @@ class FaceRecognitionCamera:
                 pass
             self.cap = None
 
-    def restart_camera(self, camera_source: str, threshold: Optional[float] = None, idle_timeout: Optional[int] = None, is_active: Optional[bool] = None):
+    def restart_camera(self, camera_source: str, threshold: Optional[float] = None, idle_timeout: Optional[int] = None, is_active: Optional[bool] = None, flip_horizontal: Optional[bool] = None):
         th = threshold if threshold is not None else self.recognition_threshold
         to = idle_timeout if idle_timeout is not None else self.idle_timeout
         act = is_active if is_active is not None else self.is_active
-        self.start(camera_source=camera_source, threshold=th, idle_timeout=to, is_active=act)
+        flip = flip_horizontal if flip_horizontal is not None else self.flip_horizontal
+        self.start(camera_source=camera_source, threshold=th, idle_timeout=to, is_active=act, flip_horizontal=flip)
 
     def _capture_loop(self):
         self.cap = self._open_camera()
@@ -545,6 +489,8 @@ class FaceRecognitionCamera:
                 ret, frame = self.cap.read()
                 if not ret or frame is None or frame.size == 0:
                     frame = None
+                elif self.flip_horizontal:
+                    frame = cv2.flip(frame, 1)
             else:
                 if time.time() - reconnect_timer > 5.0:
                     reconnect_timer = time.time()
@@ -572,7 +518,7 @@ class FaceRecognitionCamera:
                 except queue.Full:
                     pass
 
-            time.sleep(0.03)
+            time.sleep(0.02)
 
         if self.cap:
             try:
@@ -584,12 +530,12 @@ class FaceRecognitionCamera:
     def _process_loop(self):
         while self._running:
             try:
-                raw_frame, ts = self._frame_queue.get(timeout=0.2)
+                raw_frame, ts = self._frame_queue.get(timeout=0.05)
             except queue.Empty:
                 if self._active_teacher_id is not None:
                     if time.time() - self._last_seen_time > self.idle_timeout:
                         self._active_teacher_id = None
-                        self._consecutive_hits = 0
+                        self._history.clear()
                         self._last_detected_id = None
                         self.ws_manager.broadcast_from_thread({
                             "event": "TIMEOUT_EXPIRED",
@@ -598,65 +544,110 @@ class FaceRecognitionCamera:
                 continue
 
             if not self.is_active:
-                time.sleep(0.1)
+                time.sleep(0.05)
                 continue
 
             annotated_frame = raw_frame.copy()
-            boxes = self.detector.detect(raw_frame, threshold=0.45)
+            results = self.vision.detect_and_align(raw_frame)
 
             detected_cand_id = None
             detected_cand_name = None
             max_sim = 0.0
 
-            if boxes:
-                x, y, bw, bh = boxes[0]
-                face_crop = raw_frame[max(0, y):min(raw_frame.shape[0], y + bh), max(0, x):min(raw_frame.shape[1], x + bw)]
+            if results:
+                with self._teachers_lock:
+                    candidates = list(self.known_teachers)
 
-                if face_crop.size > 0:
-                    face_emb = self.extractor.extract(face_crop)
-                    with self._teachers_lock:
-                        candidates = list(self.known_teachers)
+                best_sim = 0.0
+                best_id = None
+                best_name = None
+
+                # Обрабатываем все обнаруженные лица в кадре
+                for bbox, aligned_face, score in results:
+                    face_emb = self.vision.extract_feature(aligned_face)
+                    face_max_sim = 0.0
+                    matched_id = None
+                    matched_name = None
 
                     for teacher in candidates:
-                        sim = float(np.dot(teacher["vector"], face_emb))
-                        if sim > max_sim:
-                            max_sim = sim
+                        sim = float(np.dot(teacher["vector"].flatten(), face_emb.flatten()))
+                        if sim > face_max_sim:
+                            face_max_sim = sim
                             if sim >= self.recognition_threshold:
-                                detected_cand_id = teacher["teacher_id"]
-                                detected_cand_name = teacher["full_name"]
+                                matched_id = teacher["teacher_id"]
+                                matched_name = teacher["full_name"]
 
-                color = (16, 185, 129) if detected_cand_id else (59, 130, 246)
-                label = f"{detected_cand_name} ({max_sim:.2f})" if detected_cand_id else f"Лицо обнаружено ({max_sim:.2f})"
-                cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
-                cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
-                cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                    x, y, bw, bh = bbox
+                    if matched_id:
+                        color = (16, 185, 129)
+                        label = f"{matched_name} ({face_max_sim:.2f})"
+                    else:
+                        color = (59, 130, 246)
+                        label = f"Лицо ({face_max_sim:.2f})"
 
-            if detected_cand_id:
-                if detected_cand_id == self._last_detected_id:
-                    self._consecutive_hits += 1
-                else:
-                    self._last_detected_id = detected_cand_id
-                    self._consecutive_hits = 1
+                    cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
+                    cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
+                    cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
-                if self._consecutive_hits >= 3:
-                    self._last_seen_time = time.time()
-                    if self._active_teacher_id != detected_cand_id:
-                        self._active_teacher_id = detected_cand_id
-                        print(f"🎯 Преподаватель идентифицирован: {detected_cand_name} (ID: {detected_cand_id}, сходство: {max_sim:.3f})")
-                        self.ws_manager.broadcast_from_thread({
-                            "event": "TEACHER_DETECTED",
-                            "teacher_id": detected_cand_id,
-                            "teacher_name": detected_cand_name,
-                            "confidence": round(max_sim, 3),
-                            "photo_url": f"/api/v1/kiosk/photos/{detected_cand_id}",
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        })
-                        self.register_visit(detected_cand_id, max_sim)
+                    if face_max_sim > best_sim:
+                        best_sim = face_max_sim
+                        if matched_id:
+                            best_id = matched_id
+                            best_name = matched_name
+
+                max_sim = best_sim
+                detected_cand_id = best_id
+                detected_cand_name = best_name
+
+            # Добавляем в скользящее окно сглаживания deque(maxlen=5)
+            self._history.append((detected_cand_id, detected_cand_name, max_sim))
+
+            # Голосование большинства (Counter): 2 из 5 кадров для надежного и быстрого срабатывания
+            valid_ids = [item[0] for item in self._history if item[0] is not None]
+            confirmed_teacher_id = None
+            confirmed_teacher_name = None
+            confirmed_sim = 0.0
+
+            if valid_ids:
+                counts = Counter(valid_ids)
+                top_id, count = counts.most_common(1)[0]
+                if count >= 2:
+                    confirmed_teacher_id = top_id
+                    for item in reversed(self._history):
+                        if item[0] == top_id:
+                            confirmed_teacher_name = item[1]
+                            confirmed_sim = item[2]
+                            break
+
+            now = time.time()
+            if confirmed_teacher_id is not None:
+                self._last_seen_time = now
+                is_new = (self._active_teacher_id != confirmed_teacher_id)
+                pulse_due = (now - self._last_ws_send_time >= 1.5)
+
+                if is_new or pulse_due:
+                    self._active_teacher_id = confirmed_teacher_id
+                    self._last_ws_send_time = now
+                    if is_new:
+                        logger.info(f"Преподаватель идентифицирован: {confirmed_teacher_name} (ID: {confirmed_teacher_id}, сходство: {confirmed_sim:.3f})")
+                        self.register_visit(confirmed_teacher_id, confirmed_sim)
+
+                    # Непрерывный импульс присутствия: экран держит личное расписание, пока преподаватель у камеры
+                    self.ws_manager.broadcast_from_thread({
+                        "event": "TEACHER_DETECTED",
+                        "teacher_id": confirmed_teacher_id,
+                        "teacher_name": confirmed_teacher_name,
+                        "confidence": round(confirmed_sim, 3),
+                        "is_present": True,
+                        "photo_url": f"/api/v1/kiosk/photos/{confirmed_teacher_id}",
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    })
             else:
                 if self._active_teacher_id is not None:
-                    if time.time() - self._last_seen_time > self.idle_timeout:
+                    if now - self._last_seen_time > self.idle_timeout:
+                        logger.info(f"Преподаватель #{self._active_teacher_id} отошел от экрана. Возврат в общее расписание.")
                         self._active_teacher_id = None
-                        self._consecutive_hits = 0
+                        self._history.clear()
                         self._last_detected_id = None
                         self.ws_manager.broadcast_from_thread({
                             "event": "TIMEOUT_EXPIRED",
@@ -689,7 +680,7 @@ class FaceRecognitionCamera:
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
                 )
-            time.sleep(0.033)
+            time.sleep(0.04)
 
 
 # Глобальный синглтон

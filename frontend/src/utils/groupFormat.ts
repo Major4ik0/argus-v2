@@ -56,8 +56,8 @@ export function formatGroupStreams(groupNames: string[]): GroupStreamFormattingR
 
   for (const prefix of sortedPrefixes) {
     const groups = prefixMap.get(prefix)!
-    if (groups.length >= 2) {
-      // 2 или более групп с одного курса -> поток
+    if (groups.length >= 3) {
+      // 3 или более групп с одного курса -> поток
       const streamName = `${prefix}-поток`
       streamBadges.push({
         streamName,
@@ -68,7 +68,7 @@ export function formatGroupStreams(groupNames: string[]): GroupStreamFormattingR
       })
       resultParts.push(streamName)
     } else {
-      // Только 1 группа -> остается как есть
+      // 1 или 2 группы -> остаются как есть (перечисляются через запятую)
       individualGroups.push(...groups)
       resultParts.push(...groups)
     }
@@ -84,3 +84,26 @@ export function formatGroupStreams(groupNames: string[]): GroupStreamFormattingR
     individualGroups,
   }
 }
+
+/**
+ * Форматирует плашку учебных групп в карточке занятия:
+ * - 0 групп: "—"
+ * - 1 группа: "1391"
+ * - 2 группы: "1391, 1392"
+ * - 3 и более групп (поток): "Поток (3 гр.)"
+ */
+export function renderGroupBadge(groupsInput?: string[] | string | null): string {
+  const groupList = Array.isArray(groupsInput)
+    ? groupsInput.flatMap((g) => (g ? String(g).split(',').map((s) => s.trim()) : [])).filter(Boolean)
+    : typeof groupsInput === 'string'
+      ? groupsInput.split(',').map((g) => g.trim()).filter(Boolean)
+      : []
+
+  const uniqueGroups = Array.from(new Set(groupList))
+  if (uniqueGroups.length === 0) return '—'
+  if (uniqueGroups.length >= 3) {
+    return `Поток (${uniqueGroups.length} гр.)`
+  }
+  return uniqueGroups.join(', ')
+}
+

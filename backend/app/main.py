@@ -46,9 +46,10 @@ async def lifespan(app: FastAPI):
                 face_recognition_service.reload_embeddings(embs)
                 face_recognition_service.start(
                     camera_source=str(settings_dict.get("camera_source", "0")),
-                    threshold=float(settings_dict.get("recognition_threshold", 0.48)),
-                    idle_timeout=int(settings_dict.get("idle_timeout", 20)),
+                    threshold=float(settings_dict.get("recognition_threshold", 0.32)),
+                    idle_timeout=int(settings_dict.get("idle_timeout", 6)),
                     is_active=bool(settings_dict.get("is_active", True)),
+                    flip_horizontal=bool(settings_dict.get("camera_flip", False)),
                 )
     except Exception as e:
         print(f"Ошибка запуска видеоаналитики киоска: {e}")

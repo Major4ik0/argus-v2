@@ -329,30 +329,30 @@ export const SwapModal: React.FC<SwapModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-slate-100 flex flex-col max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-md">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-slate-100 flex flex-col max-h-[92vh] overflow-y-auto">
         
         {/* ЗАГОЛОВОК ОКНА */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-400/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-400/30 flex items-center justify-center text-amber-500 dark:text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
               <ArrowLeftRight className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-white flex items-center gap-2">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
                 Оперативная замена занятия
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-300">
                   #{currentSheid}
                 </span>
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Перенос даты, времени пары или назначение замещающего преподавателя
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -368,34 +368,34 @@ export const SwapModal: React.FC<SwapModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
 
           {/* 1. БЛОК ИСХОДНОЙ ПАРЫ */}
-          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
-              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 space-y-2">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-bold">
+              <Sparkles className="w-3.5 h-3.5 text-sky-500" />
               <span>Исходное занятие</span>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
               <div className="flex items-center gap-2">
-                <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <div className="truncate">
-                  <span className="text-slate-400 block text-[10px]">Преподаватель</span>
-                  <span className="font-semibold text-white truncate block">{currentTeacherName}</span>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Преподаватель</span>
+                  <span className="font-semibold text-slate-900 dark:text-white truncate block">{currentTeacherName}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <BookOpen className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <BookOpen className="w-3.5 h-3.5 text-sky-500 shrink-0" />
                 <div className="truncate">
-                  <span className="text-slate-400 block text-[10px]">Дисциплина</span>
-                  <span className="font-semibold text-white truncate block">{currentDiscipline}</span>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Дисциплина</span>
+                  <span className="font-semibold text-slate-900 dark:text-white truncate block">{currentDiscipline}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                 <div className="truncate">
-                  <span className="text-slate-400 block text-[10px]">Группа</span>
-                  <span className="font-semibold text-emerald-300 truncate block">{currentGroup}</span>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Группа</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-300 truncate block">{currentGroup}</span>
                 </div>
               </div>
 

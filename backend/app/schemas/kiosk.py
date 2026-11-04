@@ -6,13 +6,14 @@ from pydantic import BaseModel, Field, ConfigDict
 class KioskSettingsSchema(BaseModel):
     """Настройки терминала и камеры."""
     camera_source: str = Field(default="0", description="Индекс USB камеры (0, 1) или RTSP-ссылка")
-    recognition_threshold: float = Field(default=0.48, ge=0.2, le=0.99, description="Порог уверенности распознавания лиц (0.48 - 0.50)")
-    similarity_threshold: Optional[float] = Field(default=0.48, ge=0.2, le=0.99, description="Алиас для порога сходства")
+    recognition_threshold: float = Field(default=0.32, ge=0.2, le=0.99, description="Порог уверенности распознавания лиц SFace (0.30 - 0.35)")
+    similarity_threshold: Optional[float] = Field(default=0.32, ge=0.2, le=0.99, description="Алиас для порога сходства")
     carousel_interval: int = Field(default=12, ge=5, le=60, description="Интервал смены слайдов карусели в секундах")
     idle_timeout: int = Field(default=20, ge=5, le=120, description="Таймаут возврата в карусель при отсутствии лица (сек)")
     person_timeout: Optional[int] = Field(default=20, ge=5, le=120, description="Алиас для таймаута присутствия")
     is_active: bool = Field(default=True, description="Флаг активности видеоаналитики")
     active: Optional[bool] = Field(default=True, description="Алиас для флага активности")
+    camera_flip: Optional[bool] = Field(default=False, description="Зеркальное отображение камеры (по горизонтали)")
 
     model_config = ConfigDict(from_attributes=True)
 

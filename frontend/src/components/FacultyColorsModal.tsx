@@ -54,26 +54,26 @@ export const FacultyColorsModal: React.FC<FacultyColorsModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/75 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh] text-slate-900 dark:text-slate-100">
         {/* Шапка модалки */}
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4 bg-slate-900/80">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-5 py-4 bg-slate-50 dark:bg-slate-900/80">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 dark:border-indigo-500/40 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
               <Palette className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white leading-none">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-none">
                 Цветовая схема факультетов
               </h3>
-              <p className="text-[11px] text-slate-400 mt-1">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                 Настройка цветов групп в карточках расписания
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-white transition"
           >
             <X className="w-4 h-4" />
           </button>
@@ -88,7 +88,7 @@ export const FacultyColorsModal: React.FC<FacultyColorsModalProps> = ({
             return (
               <div
                 key={f.idfaculty}
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-800 bg-slate-950/60 hover:border-slate-700 transition"
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 hover:border-slate-300 dark:hover:border-slate-700 transition"
               >
                 <div className="flex items-center gap-3">
                   {/* Выбор цвета через нативную пипетку */}
@@ -97,25 +97,25 @@ export const FacultyColorsModal: React.FC<FacultyColorsModalProps> = ({
                       type="color"
                       value={currentColor}
                       onChange={(e) => handleColorChange(f.idfaculty, e.target.value)}
-                      className="w-9 h-9 rounded-lg border border-slate-700 cursor-pointer bg-transparent p-0 overflow-hidden"
+                      className="w-9 h-9 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer bg-transparent p-0 overflow-hidden"
                     />
                   </div>
 
                   <div>
-                    <div className="text-xs font-bold text-slate-100">
+                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
                       {f.short_name}
                       <span className="text-[10px] font-mono text-slate-500 ml-2">
                         ID: {f.idfaculty}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400 truncate max-w-[240px]">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[240px]">
                       {f.name}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-slate-300 font-medium px-2 py-1 rounded bg-slate-900 border border-slate-800">
+                  <span className="font-mono text-xs text-slate-700 dark:text-slate-300 font-medium px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                     {currentColor.toUpperCase()}
                   </span>
 
@@ -131,7 +131,7 @@ export const FacultyColorsModal: React.FC<FacultyColorsModalProps> = ({
                   )}
 
                   {savedSuccessId === f.idfaculty && (
-                    <span className="text-emerald-400 flex items-center gap-1 text-xs font-medium">
+                    <span className="text-emerald-500 dark:text-emerald-400 flex items-center gap-1 text-xs font-medium">
                       <Check className="w-3.5 h-3.5" />
                     </span>
                   )}
@@ -142,13 +142,13 @@ export const FacultyColorsModal: React.FC<FacultyColorsModalProps> = ({
         </div>
 
         {/* Подвал */}
-        <div className="border-t border-slate-800 px-5 py-3 bg-slate-900/60 flex items-center justify-between">
+        <div className="border-t border-slate-200 dark:border-slate-800 px-5 py-3 bg-slate-50 dark:bg-slate-900/60 flex items-center justify-between">
           <span className="text-[11px] text-slate-500">
             Изменения сохраняются в базу данных и применятся сразу
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition"
+            className="px-4 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition"
           >
             Закрыть
           </button>

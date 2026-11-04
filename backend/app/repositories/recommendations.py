@@ -547,13 +547,13 @@ class RecommendationsRepository:
             # Определение бейджа
             if same_group_cnt > 0:
                 badge_type = "experience"
-                badge_text = f"✓ С группой ({same_group_cnt})"
+                badge_text = f"С группой ({same_group_cnt})"
             elif total_cnt > 0:
                 badge_type = "rank-high"
-                badge_text = f"📚 Дисциплина ({total_cnt})"
+                badge_text = f"Дисциплина ({total_cnt})"
             else:
                 badge_type = "new"
-                badge_text = "🆕 Новый"
+                badge_text = "Новый"
 
             recommendations.append({
                 "mid": mid,
@@ -700,9 +700,9 @@ class RecommendationsRepository:
             # Формирование подробного интеллектуального текстового обоснования (reason)
             reasons = []
             if is_free:
-                reasons.append("✓ Свободен в данный период")
+                reasons.append("Свободен в данный период")
             else:
-                reasons.append("⚠ Внимание: ведет другое занятие в этот слот")
+                reasons.append("Внимание: ведет другое занятие в этот слот")
 
             if c["same_group_count"] > 0:
                 reasons.append(f"Провел {c['same_group_count']} зан. с этой группой")
@@ -1103,9 +1103,9 @@ class RecommendationsRepository:
             # Причины рекомендации
             reasons = []
             if is_free:
-                reasons.append("✓ Свободен в данный период")
+                reasons.append("Свободен в данный период")
             else:
-                reasons.append(f"⚠ Внимание: {busy_info.get('description', 'занят') if busy_info else 'занят'}")
+                reasons.append(f"Внимание: {busy_info.get('description', 'занят') if busy_info else 'занят'}")
 
             if same_group_lessons > 0:
                 reasons.append(f"Провел {same_group_lessons} зан. с этой группой")

@@ -3,7 +3,12 @@ import axios from 'axios'
 import { User, Lock, Eye, EyeOff, Sparkles, ArrowRight } from 'lucide-react'
 
 interface LoginPageProps {
-  onLoginSuccess: (role: 'user' | 'admin', isSuper?: boolean, username?: string) => void
+  onLoginSuccess: (
+    role: 'user' | 'admin',
+    isSuper?: boolean,
+    username?: string,
+    permissions?: any
+  ) => void
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
@@ -70,10 +75,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         if (res.data.token) {
           localStorage.setItem('auth_token', res.data.token)
         }
+        if (res.data.permissions) {
+          localStorage.setItem('user_permissions', JSON.stringify(res.data.permissions))
+        }
         onLoginSuccess(
           res.data.is_admin ? 'admin' : 'user',
           Boolean(res.data.is_superadmin),
-          res.data.username || submittedLogin
+          res.data.username || submittedLogin,
+          res.data.permissions
         )
       } else {
         setError('Неверный логин или пароль')
@@ -84,7 +93,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       } else {
         if (submittedLogin.toLowerCase() === 'admin' && submittedPassword === '12345678') {
           localStorage.setItem('auth_token', 'dev_token')
-          onLoginSuccess('admin', true, 'admin')
+          const defaultPerms = {
+            can_view_admin: true,
+            can_edit_schedule: true,
+            can_manage_kiosk: true,
+            can_manage_theming: true,
+          }
+          localStorage.setItem('user_permissions', JSON.stringify(defaultPerms))
+          onLoginSuccess('admin', true, 'admin', defaultPerms)
         } else {
           setError('Неверный логин или пароль')
         }

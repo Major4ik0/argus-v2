@@ -337,6 +337,7 @@ export interface KioskSettings {
   carousel_interval: number
   idle_timeout: number
   is_active: boolean
+  camera_flip?: boolean
 }
 
 export interface TeacherBiometricStatus {

@@ -14,7 +14,7 @@ export default defineConfig({
         ws: true,
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
-            console.log('❌ Proxy error:', err)
+            console.log('[Proxy error]:', err)
           })
         },
       },

@@ -648,33 +648,32 @@ export const LessonModal: React.FC<LessonModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl text-slate-100 flex flex-col max-h-[92vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 dark:bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 shadow-2xl text-slate-900 dark:text-slate-100 flex flex-col max-h-[92vh] overflow-hidden">
         {/* HEADER */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-sm">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/60 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <div
               className={`w-9 h-9 rounded-xl border flex items-center justify-center shadow-inner ${
                 mode === 'edit'
-                  ? 'bg-amber-500/15 border-amber-400/30 text-amber-400'
-                  : 'bg-sky-500/15 border-sky-400/30 text-sky-400'
+                  ? 'bg-amber-500/15 border-amber-400/30 text-amber-500 dark:text-amber-400'
+                  : 'bg-sky-500/15 border-sky-400/30 text-sky-500 dark:text-sky-400'
               }`}
             >
               {mode === 'edit' ? <Save className="w-5 h-5" /> : <PlusCircle className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="font-bold text-base text-white leading-tight">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white leading-tight">
                 {mode === 'edit' ? 'Редактирование занятия' : 'Добавление занятия'}
               </h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 Информационная панель и академический паспорт пары
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-            title="Закрыть"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
           </button>

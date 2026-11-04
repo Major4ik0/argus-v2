@@ -27,27 +27,17 @@ router = APIRouter()
 
 
 @router.get("/video_feed", summary="MJPEG видеопоток с камеры")
-async def video_feed():
-    """Стриминг живого видеопотока с камеры с наложенными рамками детекции."""
-    def frame_generator():
-        while True:
-            frame_bytes = face_recognition_service.get_jpeg_frame()
-            if frame_bytes:
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-                )
-            time.sleep(0.033)  # ~30 FPS
-
+def video_feed():
+    """Синхронный стриминг живого видеопотока с камеры (не блокирует event loop)."""
     return StreamingResponse(
-        frame_generator(),
+        face_recognition_service.generate_mjpeg_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
 
 @router.get("/video-feed", include_in_schema=False)
-async def get_video_feed_alias():
-    return await video_feed()
+def get_video_feed_alias():
+    return video_feed()
 
 
 @router.post("/camera/snapshot", response_model=CameraSnapshotResponse, summary="Захват текущего кадра с камеры")
@@ -144,13 +134,19 @@ async def upload_teacher_biometrics(
             detail="Необходимо прикрепить файл или включить флаг снимка с камеры",
         )
 
+    # Вычисляем 128-D L2-нормализованный эмбеддинг SFace
+    embedding_bytes, bbox = face_recognition_service.compute_embedding_from_image(img_bgr)
+    vec = np.frombuffer(embedding_bytes[:512], dtype=np.float32)
+    if np.linalg.norm(vec) < 1e-6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Лицо не обнаружено на изображении. Пожалуйста, выберите четкую портретную фотографию",
+        )
+
     # Сохраняем фото на диск
     photo_filename = f"teacher_{teacher_id}.jpg"
     photo_path = os.path.join(PHOTOS_DIR, photo_filename)
     cv2.imwrite(photo_path, img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-    # Вычисляем 512-D L2-нормализованный эмбеддинг
-    embedding_bytes, bbox = face_recognition_service.compute_embedding_from_image(img_bgr)
 
     # Сохраняем в базу данных
     repo = KioskRepository(conn)
@@ -174,11 +170,13 @@ async def delete_teacher_biometrics(
     teacher_id: int,
     conn: asyncpg.Connection = Depends(get_db_connection),
 ):
-    """Удаляет фото и вектор биометрии преподавателя."""
+    """Удаляет фото и вектор биометрии преподавателя с диска, из базы и из памяти."""
     repo = KioskRepository(conn)
     photo_filename = await repo.get_biometric_photo_path(teacher_id)
 
     success = await repo.delete_biometrics(teacher_id)
+
+    # 1. Физическое удаление файла с диска
     if photo_filename:
         full_path = os.path.join(PHOTOS_DIR, photo_filename)
         if os.path.exists(full_path):
@@ -187,11 +185,24 @@ async def delete_teacher_biometrics(
             except Exception:
                 pass
 
-    # Перезагружаем кэш
+    default_photo = os.path.join(PHOTOS_DIR, f"teacher_{teacher_id}.jpg")
+    if os.path.exists(default_photo):
+        try:
+            os.remove(default_photo)
+        except Exception:
+            pass
+
+    # 2. Удаление из памяти камеры
+    with face_recognition_service._teachers_lock:
+        face_recognition_service.known_teachers = [
+            t for t in face_recognition_service.known_teachers if t["teacher_id"] != teacher_id
+        ]
+
+    # 3. Полная перезагрузка базы биометрии
     all_embs = await repo.get_all_embeddings()
     face_recognition_service.reload_embeddings(all_embs)
 
-    return {"status": "ok", "message": f"Биометрия преподавателя #{teacher_id} удалена", "deleted": success}
+    return {"status": "ok", "message": f"Биометрия преподавателя #{teacher_id} полностью удалена", "deleted": success}
 
 
 @router.get("/biometrics/status", response_model=List[TeacherBiometricStatusItem], summary="Статус биометрии всех преподавателей")
@@ -215,21 +226,27 @@ async def get_teacher_photo(
     teacher_id: int,
     conn: asyncpg.Connection = Depends(get_db_connection),
 ):
-    """Отдает сохраненную фотографию преподавателя либо SVG заглушку."""
+    """Отдает сохраненную фотографию преподавателя либо SVG заглушку с отключением HTTP-кэширования."""
     repo = KioskRepository(conn)
     photo_filename = await repo.get_biometric_photo_path(teacher_id)
+
+    no_cache_headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
 
     if photo_filename:
         photo_full_path = os.path.join(PHOTOS_DIR, photo_filename)
         if os.path.exists(photo_full_path):
-            return FileResponse(photo_full_path, media_type="image/jpeg")
+            return FileResponse(photo_full_path, media_type="image/jpeg", headers=no_cache_headers)
 
     # SVG заглушка
     svg_data = """<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
         <circle cx="12" cy="7" r="4"></circle>
     </svg>"""
-    return Response(content=svg_data, media_type="image/svg+xml")
+    return Response(content=svg_data, media_type="image/svg+xml", headers=no_cache_headers)
 
 
 @router.get("/settings", response_model=KioskSettingsSchema, summary="Получить настройки терминала")
@@ -258,14 +275,16 @@ async def update_kiosk_settings(
     ):
         face_recognition_service.restart_camera(
             camera_source=str(updated.get("camera_source", "0")),
-            threshold=float(updated.get("recognition_threshold", 0.48)),
-            idle_timeout=int(updated.get("idle_timeout", 20)),
+            threshold=float(updated.get("recognition_threshold", 0.32)),
+            idle_timeout=int(updated.get("idle_timeout", 6)),
             is_active=bool(updated.get("is_active", True)),
+            flip_horizontal=bool(updated.get("camera_flip", False)),
         )
     else:
-        face_recognition_service.recognition_threshold = float(updated.get("recognition_threshold", 0.48))
-        face_recognition_service.idle_timeout = int(updated.get("idle_timeout", 20))
+        face_recognition_service.recognition_threshold = float(updated.get("recognition_threshold", 0.32))
+        face_recognition_service.idle_timeout = int(updated.get("idle_timeout", 6))
         face_recognition_service.is_active = bool(updated.get("is_active", True))
+        face_recognition_service.set_flip_horizontal(bool(updated.get("camera_flip", False)))
 
     return updated
 

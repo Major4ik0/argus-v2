@@ -663,13 +663,18 @@ class ScheduleRepository:
         ),
         schedule_with_groups AS (
             SELECT 
-                nnz_s.sheid,
-                array_agg(DISTINCT g.name) AS all_groups,
-                array_agg(DISTINCT g.gid) AS all_gids
+                nnz_s.sh_var_id,
+                nnz_s.day_of_week,
+                nnz_s.period,
+                nnz_s.cid,
+                array_agg(DISTINCT g.name ORDER BY g.name) AS all_groups,
+                array_agg(DISTINCT g.gid) AS all_gids,
+                string_agg(DISTINCT g.name, ', ' ORDER BY g.name) AS group_names,
+                count(DISTINCT g.gid) AS groups_count
             FROM filtered_variants fv
             JOIN public.nnz_schedule nnz_s ON nnz_s.sh_var_id = fv.sh_var_id
             JOIN public.groupname g ON g.gid = nnz_s.gid
-            GROUP BY nnz_s.sheid
+            GROUP BY nnz_s.sh_var_id, nnz_s.day_of_week, nnz_s.period, nnz_s.cid
         )
         SELECT 
             COALESCE(p_main.lastname || ' ' || p_main.firstname || ' ' || COALESCE(p_main.patronymic, ''), 'Преподаватель не указан') AS teacher_name,
@@ -693,7 +698,11 @@ class ScheduleRepository:
             crs.title AS course_title,
             COALESCE(r_main.short_name, 'Ауд. не указана') AS room_name,
             e.alias AS event_type,
-            g_main.name AS group_name,
+            COALESCE(swg.group_names, g_main.name) AS group_name,
+            COALESCE(swg.group_names, g_main.name) AS group_names,
+            COALESCE(swg.all_groups, ARRAY[g_main.name]::text[]) AS all_groups,
+            COALESCE(swg.all_groups, ARRAY[g_main.name]::text[]) AS groups,
+            COALESCE(swg.groups_count, 1) AS groups_count,
             g_main.idfaculty AS faculty_id,
             COALESCE(f."shortName", f.faculty, '') AS faculty_short_name,
             COALESCE(fc.color, f.color, '') AS faculty_color,
@@ -716,7 +725,7 @@ class ScheduleRepository:
             COALESCE(swt.all_teacher_mids, nnz_s.teacher_mid) AS all_teacher_mids,
             COALESCE(swr.all_rooms, ARRAY[]::text[]) AS all_rooms,
             COALESCE(swr.all_rids, nnz_s.rid) AS all_rids,
-            COALESCE(swg.all_groups, ARRAY[]::text[]) AS all_groups,
+            COALESCE(swg.all_groups, ARRAY[]::text[]) AS swg_groups,
             COALESCE(swg.all_gids, ARRAY[nnz_s.gid]::integer[]) AS all_gids
         FROM filtered_variants fv
         JOIN public.nnz_schedule nnz_s ON nnz_s.sh_var_id = fv.sh_var_id
@@ -730,7 +739,11 @@ class ScheduleRepository:
         JOIN public.periods pr ON nnz_s.period = pr.lid
         LEFT JOIN schedule_with_teachers swt ON swt.sheid = nnz_s.sheid
         LEFT JOIN schedule_with_rooms swr ON swr.sheid = nnz_s.sheid
-        LEFT JOIN schedule_with_groups swg ON swg.sheid = nnz_s.sheid
+        LEFT JOIN schedule_with_groups swg ON 
+            swg.sh_var_id = nnz_s.sh_var_id AND 
+            swg.day_of_week = nnz_s.day_of_week AND 
+            swg.period = nnz_s.period AND 
+            swg.cid = nnz_s.cid
         WHERE (p_main.mid = ANY($7::integer[]) OR nnz_s.teacher_mid && $7::integer[])
           AND (fv.week_start_date + (nnz_s.day_of_week - 1) * INTERVAL '1 day')::date BETWEEN $8 AND $9
         ORDER BY event_date, period_id;
@@ -747,7 +760,7 @@ class ScheduleRepository:
             last_date         # $9
         )
 
-        result = []
+        dedup_events: Dict[Tuple[str, int, int, int], Dict[str, Any]] = {}
         for r in rows:
             d = dict(r)
             p_num = d.get("pair_number") or 1
@@ -767,6 +780,18 @@ class ScheduleRepository:
             fac_name, fac_color = resolve_faculty(d.get("faculty_short_name"), d.get("faculty_color"))
             d["faculty_short_name"] = fac_name
             d["faculty_color"] = fac_color
-            result.append(d)
 
-        return result
+            key = (str(d.get("event_date")), int(p_num), int(d.get("teacher_id") or 0), int(d.get("cid") or 0))
+            if key in dedup_events:
+                existing = dedup_events[key]
+                cur_groups = list(d.get("all_groups") or [])
+                ex_groups = list(existing.get("all_groups") or [])
+                merged_groups = list(dict.fromkeys(ex_groups + cur_groups))
+                existing["all_groups"] = merged_groups
+                existing["groups"] = merged_groups
+                existing["group_name"] = ", ".join(merged_groups)
+                existing["groups_count"] = len(merged_groups)
+            else:
+                dedup_events[key] = d
+
+        return list(dedup_events.values())

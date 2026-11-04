@@ -15,6 +15,7 @@ import {
   Clock,
   Loader2,
   AlertCircle,
+  FlipHorizontal,
 } from 'lucide-react'
 import {
   fetchKioskSettings,
@@ -45,10 +46,11 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
   // Настройки камеры и терминала
   const [settings, setSettings] = useState<KioskSettings>({
     camera_source: '0',
-    recognition_threshold: 0.48,
+    recognition_threshold: 0.32,
     carousel_interval: 12,
-    idle_timeout: 20,
+    idle_timeout: 6,
     is_active: true,
+    camera_flip: false,
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null)
@@ -64,8 +66,9 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
   const [stats, setStats] = useState<KioskStatsSummary | null>(null)
   const [_loadingStats, setLoadingStats] = useState(false)
 
-  // Видеопоток
+  // Видеопоток и кэш фотографий
   const [streamKey, setStreamKey] = useState<number>(Date.now())
+  const [cacheBuster, setCacheBuster] = useState<number>(Date.now())
   const [hasStreamError, setHasStreamError] = useState<boolean>(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadTargetTeacherId, setUploadTargetTeacherId] = useState<number | null>(null)
@@ -81,6 +84,14 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
     loadStats()
   }, [])
 
+  useEffect(() => {
+    if (subTab === 'stats') {
+      loadStats()
+      const interval = setInterval(loadStats, 8000)
+      return () => clearInterval(interval)
+    }
+  }, [subTab])
+
   const loadSettings = async () => {
     try {
       const data = await fetchKioskSettings()
@@ -95,6 +106,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
       setLoadingTeachers(true)
       const data = await fetchTeacherBiometricsStatus()
       setTeachers(data)
+      setCacheBuster(Date.now())
     } catch (err) {
       console.error('Ошибка загрузки преподавателей:', err)
     } finally {
@@ -138,6 +150,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
     try {
       const res = await takeCameraSnapshotForTeacher(teacherId)
       if (res.success) {
+        setCacheBuster(Date.now())
         setActionMessage({
           text: `Снимок с камеры успешно сохранен и биометрия вычислена для преподавателя #${teacherId}`,
           type: 'success',
@@ -182,6 +195,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
       formData.append('use_camera_snapshot', 'false')
       const res = await uploadTeacherBiometrics(uploadTargetTeacherId, formData)
       if (res.success) {
+        setCacheBuster(Date.now())
         setActionMessage({
           text: `Фото успешно загружено и вектор рассчитан для преподавателя #${uploadTargetTeacherId}`,
           type: 'success',
@@ -206,6 +220,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
     setProcessingTeacherId(teacherId)
     try {
       await deleteTeacherBiometrics(teacherId)
+      setCacheBuster(Date.now())
       setActionMessage({
         text: `Биометрия преподавателя #${teacherId} удалена`,
         type: 'success',
@@ -232,7 +247,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
   const withPhotoCount = teachers.filter((t) => t.has_photo).length
 
   return (
-    <div className="flex flex-col h-full text-slate-100 bg-slate-900 rounded-2xl overflow-hidden">
+    <div className="flex flex-col h-full text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden">
       {/* Скрытый input для загрузки фото */}
       <input
         type="file"
@@ -243,7 +258,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
       />
 
       {/* Верхняя навигация по подвкладкам */}
-      <div className="px-6 py-3 border-b border-slate-800 bg-slate-950/70 flex items-center justify-between shrink-0">
+      <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -251,7 +266,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
               subTab === 'camera'
                 ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Video className="w-4 h-4" />
@@ -264,7 +279,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
               subTab === 'teachers'
                 ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Users className="w-4 h-4" />
@@ -273,11 +288,14 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
 
           <button
             type="button"
-            onClick={() => setSubTab('stats')}
+            onClick={() => {
+              setSubTab('stats')
+              loadStats()
+            }}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
               subTab === 'stats'
                 ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <BarChart3 className="w-4 h-4" />
@@ -439,7 +457,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                     <span>0.25 (Мягкий)</span>
-                    <span>0.48 (Рекомендуемый)</span>
+                    <span>0.32 (Рекомендуемый SFace)</span>
                     <span>0.80 (Строгий)</span>
                   </div>
                 </div>
@@ -491,6 +509,23 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                     type="checkbox"
                     checked={settings.is_active}
                     onChange={(e) => setSettings({ ...settings, is_active: e.target.checked })}
+                    className="w-4 h-4 accent-sky-500 rounded cursor-pointer"
+                  />
+                </div>
+
+                {/* Зеркальное отображение камеры */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <FlipHorizontal className="w-4 h-4 text-sky-400" />
+                    <div>
+                      <div className="text-xs font-bold text-white">Зеркальное отображение камеры</div>
+                      <div className="text-[10px] text-slate-400">Отражать видеопоток по горизонтали (эффект зеркала)</div>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(settings.camera_flip)}
+                    onChange={(e) => setSettings({ ...settings, camera_flip: e.target.checked })}
                     className="w-4 h-4 accent-sky-500 rounded cursor-pointer"
                   />
                 </div>
@@ -564,7 +599,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                         <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-slate-900 border-2 border-slate-800 shrink-0 flex items-center justify-center">
                           {t.has_photo && t.photo_url ? (
                             <img
-                              src={t.photo_url}
+                              src={`${t.photo_url}?v=${cacheBuster}`}
                               alt={t.full_name}
                               className="w-full h-full object-cover"
                             />
@@ -676,6 +711,25 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
         {/* ПОДВКЛАДКА 3: ДАШБОРД СТАТИСТИКИ ИСПОЛЬЗОВАНИЯ */}
         {subTab === 'stats' && (
           <div className="space-y-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+              <div>
+                <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Статистика подходов и аналитика
+                </h4>
+                <div className="text-[11px] text-slate-400">
+                  Фиксации подходов преподавателей к камере и охват кафедры
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={loadStats}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Обновить статистику</span>
+              </button>
+            </div>
+
             {/* Виджеты ключевых показателей */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl">
