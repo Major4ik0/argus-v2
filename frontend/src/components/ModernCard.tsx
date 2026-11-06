@@ -9,6 +9,7 @@ export interface ModernCardProps {
   teacherColor: string
   facultyColors: Record<number, string>
   isDense: boolean
+  fontScale?: 'compact' | 'normal' | 'large'
   isAdmin?: boolean
   isCut?: boolean
   isSelected?: boolean
@@ -26,6 +27,7 @@ export const ModernCard: React.FC<ModernCardProps> = ({
   event,
   facultyColors,
   isDense,
+  fontScale = 'normal',
   isAdmin,
   isCut,
   isSelected,
@@ -84,6 +86,13 @@ export const ModernCard: React.FC<ModernCardProps> = ({
       setShowMenu(false)
     }
   }
+
+  const pillFontClass =
+    fontScale === 'compact'
+      ? 'text-[11px] py-0.5 px-1'
+      : fontScale === 'large'
+      ? 'text-sm py-1.5 px-2'
+      : 'text-xs py-1 px-1.5'
 
   return (
     <div
@@ -145,25 +154,25 @@ export const ModernCard: React.FC<ModernCardProps> = ({
       )}
 
       {/* 1. Тип занятия и номер */}
-      <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words">
+      <div className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight break-words ${pillFontClass}`}>
         {lessonTypeStr}
       </div>
 
       {/* 2. Номер аудитории */}
-      <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words">
+      <div className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight break-words ${pillFontClass}`}>
         {roomStr}
       </div>
 
       {/* 3. Номер учебной группы / Поток */}
       <div
-        className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words"
+        className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight break-words ${pillFontClass}`}
         title={allGroupsTooltip}
       >
         {groupBadge}
       </div>
 
       {/* 4. Шифр дисциплины */}
-      <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight break-words">
+      <div className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight break-words ${pillFontClass}`}>
         {courseStr}
       </div>
 

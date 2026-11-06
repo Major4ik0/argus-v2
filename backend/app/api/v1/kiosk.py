@@ -3,6 +3,7 @@ import os
 import io
 import time
 import base64
+import logging
 import cv2
 import numpy as np
 from typing import Optional, List
@@ -22,16 +23,30 @@ from ...schemas.kiosk import (
 )
 from ...repositories.kiosk import KioskRepository
 from ...services.camera import camera_service as face_recognition_service, PHOTOS_DIR
+from ...services.settings_service import settings_service
+
+logger = logging.getLogger("argus.kiosk")
 
 router = APIRouter()
 
 
+def frame_generator():
+    """Синхронный генератор кадров с паузой 0.033с (~30 FPS)."""
+    while True:
+        frame_bytes = face_recognition_service.get_jpeg_frame()
+        if frame_bytes:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+            )
+        time.sleep(0.033)
+
+
 @router.get("/video_feed", summary="MJPEG видеопоток с камеры")
 def video_feed():
-    """Синхронный стриминг живого видеопотока с камеры (не блокирует event loop)."""
     return StreamingResponse(
-        face_recognition_service.generate_mjpeg_stream(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 
@@ -134,9 +149,9 @@ async def upload_teacher_biometrics(
             detail="Необходимо прикрепить файл или включить флаг снимка с камеры",
         )
 
-    # Вычисляем 128-D L2-нормализованный эмбеддинг SFace
+    # Вычисляем 512-D L2-нормализованный эмбеддинг ArcFace (InsightFace buffalo_l)
     embedding_bytes, bbox = face_recognition_service.compute_embedding_from_image(img_bgr)
-    vec = np.frombuffer(embedding_bytes[:512], dtype=np.float32)
+    vec = np.frombuffer(embedding_bytes, dtype=np.float32)
     if np.linalg.norm(vec) < 1e-6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -255,8 +270,7 @@ async def get_kiosk_settings(
     conn: asyncpg.Connection = Depends(get_db_connection),
 ):
     """Текущие настройки камеры, порога распознавания и таймеров."""
-    repo = KioskRepository(conn)
-    return await repo.get_settings()
+    return await settings_service.get_config(conn=conn)
 
 
 @router.put("/settings", response_model=KioskSettingsSchema, summary="Обновить настройки терминала")
@@ -265,29 +279,7 @@ async def update_kiosk_settings(
     conn: asyncpg.Connection = Depends(get_db_connection),
 ):
     """Обновление параметров камеры и табло с авто-перезапуском видеопотока при необходимости."""
-    repo = KioskRepository(conn)
-    old_settings = await repo.get_settings()
-    updated = await repo.update_settings(payload.model_dump())
-
-    # Если изменились параметры камеры или активности, перезапускаем сервис
-    if (
-        str(old_settings.get("camera_source")) != str(updated.get("camera_source"))
-        or old_settings.get("is_active") != updated.get("is_active")
-    ):
-        face_recognition_service.restart_camera(
-            camera_source=str(updated.get("camera_source", "0")),
-            threshold=float(updated.get("recognition_threshold", 0.32)),
-            idle_timeout=int(updated.get("idle_timeout", 6)),
-            is_active=bool(updated.get("is_active", True)),
-            flip_horizontal=bool(updated.get("camera_flip", False)),
-        )
-    else:
-        face_recognition_service.recognition_threshold = float(updated.get("recognition_threshold", 0.32))
-        face_recognition_service.idle_timeout = int(updated.get("idle_timeout", 6))
-        face_recognition_service.is_active = bool(updated.get("is_active", True))
-        face_recognition_service.set_flip_horizontal(bool(updated.get("camera_flip", False)))
-
-    return updated
+    return await settings_service.update_config(payload.model_dump(), conn=conn)
 
 
 @router.get("/stats", response_model=KioskStatsSummary, summary="Сводная статистика работы табло")
@@ -347,6 +339,8 @@ async def kiosk_websocket_endpoint(websocket: WebSocket):
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        face_recognition_service.ws_manager.disconnect(websocket)
-    except Exception:
+        pass
+    except Exception as e:
+        logger.warning(f"[Kiosk WS] Ошибка соединения WebSocket: {e}")
+    finally:
         face_recognition_service.ws_manager.disconnect(websocket)

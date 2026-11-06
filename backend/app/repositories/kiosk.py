@@ -17,19 +17,35 @@ class KioskRepository:
         rows = await self.conn.fetch(sql)
         settings: Dict[str, Any] = {
             "camera_source": "0",
-            "recognition_threshold": 0.32,
-            "similarity_threshold": 0.32,
-            "carousel_interval": 12,
+            "camera_similarity_threshold": 0.45,
+            "recognition_threshold": 0.45,
+            "similarity_threshold": 0.45,
+            "carousel_interval": 6,
+            "carousel_active": True,
+            "start_day_mode": "monday",
+            "font_scale": "normal",
+            "font_scale_display": "normal",
+            "font_scale_schedule": "normal",
             "idle_timeout": 6,
+            "person_timeout": 20,
             "is_active": True,
-            "camera_flip": False,
+            "active": True,
+            "camera_mirror": True,
+            "camera_flip": True,
+            "ticker_text": "",
+            "ticker_active": False,
+            "night_mode_enabled": False,
+            "night_mode_start": "21:00",
+            "night_mode_end": "07:30",
         }
         for r in rows:
             k = r["key"]
             v = r["value"]
-            if k == "camera_source":
+            if v is None:
+                continue
+            if k in ("camera_source", "start_day_mode", "font_scale", "font_scale_display", "font_scale_schedule", "ticker_text", "night_mode_start", "night_mode_end"):
                 settings[k] = v
-            elif k in ("recognition_threshold", "similarity_threshold"):
+            elif k in ("camera_similarity_threshold", "recognition_threshold", "similarity_threshold"):
                 try:
                     settings[k] = float(v)
                 except ValueError:
@@ -39,8 +55,28 @@ class KioskRepository:
                     settings[k] = int(v)
                 except ValueError:
                     pass
-            elif k in ("is_active", "active", "camera_flip"):
-                settings[k] = v.lower() in ("true", "1", "yes")
+            elif k in ("is_active", "active", "camera_mirror", "camera_flip", "carousel_active", "ticker_active", "night_mode_enabled"):
+                settings[k] = str(v).lower() in ("true", "1", "yes")
+
+        # Синхронизация взаимных алиасов
+        if "camera_similarity_threshold" not in settings or settings["camera_similarity_threshold"] is None:
+            settings["camera_similarity_threshold"] = settings.get("recognition_threshold", 0.45)
+        settings["recognition_threshold"] = settings["camera_similarity_threshold"]
+        settings["similarity_threshold"] = settings["camera_similarity_threshold"]
+
+        if "camera_mirror" not in settings or settings["camera_mirror"] is None:
+            settings["camera_mirror"] = settings.get("camera_flip", True)
+        settings["camera_flip"] = settings["camera_mirror"]
+
+        if "carousel_interval" not in settings or settings["carousel_interval"] is None:
+            settings["carousel_interval"] = settings.get("idle_timeout", 6)
+        settings["idle_timeout"] = settings["carousel_interval"]
+
+        if not settings.get("font_scale_display"):
+            settings["font_scale_display"] = settings.get("font_scale", "normal")
+        if not settings.get("font_scale_schedule"):
+            settings["font_scale_schedule"] = settings.get("font_scale", "normal")
+        settings["font_scale"] = settings["font_scale_display"]
         return settings
 
     async def update_settings(self, new_settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -101,6 +137,16 @@ class KioskRepository:
                     MAX(recognized_at) AS last_visit
                 FROM public.kiosk_recognition_logs
                 GROUP BY teacher_id
+            ),
+            photos_summary AS (
+                SELECT 
+                    teacher_id,
+                    COUNT(*)::int AS photos_count,
+                    MAX(CASE WHEN is_primary THEN file_path ELSE NULL END) AS primary_path,
+                    MAX(file_path) AS any_path,
+                    MAX(created_at) AS latest_created_at
+                FROM public.teacher_photos
+                GROUP BY teacher_id
             )
             SELECT DISTINCT
                 p.mid AS teacher_id,
@@ -111,9 +157,10 @@ class KioskRepository:
                 ad.shortname AS degree_short,
                 cp.cid AS cathedra_id,
                 COALESCE(c.cathedra, pm.name_pmk, 'Кафедра') AS cathedra_name,
-                (tb.embedding IS NOT NULL) AS has_photo,
-                tb.photo_path,
-                tb.updated_at,
+                COALESCE(ps.photos_count, CASE WHEN tb.embedding IS NOT NULL THEN 1 ELSE 0 END)::int AS photos_count,
+                (COALESCE(ps.photos_count, 0) > 0 OR tb.embedding IS NOT NULL) AS has_photo,
+                COALESCE(ps.primary_path, ps.any_path, tb.photo_path) AS photo_path,
+                COALESCE(ps.latest_created_at, tb.updated_at) AS updated_at,
                 COALESCE(v.visits_today, 0)::int AS visits_today,
                 COALESCE(v.visits_week, 0)::int AS visits_week,
                 COALESCE(v.visits_total, 0)::int AS visits_total,
@@ -124,6 +171,7 @@ class KioskRepository:
             LEFT JOIN public.cathedras c ON cp.cid = c.idcathedra
             LEFT JOIN public.pmk pm ON cp.id_pmk = pm.id_pmk
             LEFT JOIN public.teacher_biometrics tb ON p.mid = tb.teacher_id
+            LEFT JOIN photos_summary ps ON p.mid = ps.teacher_id
             LEFT JOIN visits v ON v.teacher_id = p.mid
             WHERE cp.id_pmk IN (1, 2)
             ORDER BY has_photo DESC, p.lastname, p.firstname;
@@ -142,6 +190,7 @@ class KioskRepository:
                 "cathedra_name": r["cathedra_name"],
                 "degree_short": r["degree_short"],
                 "has_photo": bool(r["has_photo"]),
+                "photos_count": int(r["photos_count"]),
                 "photo_url": p_url,
                 "updated_at": r["updated_at"].strftime("%Y-%m-%d %H:%M:%S") if r["updated_at"] else None,
                 "visits_today": r["visits_today"],
@@ -153,7 +202,13 @@ class KioskRepository:
 
     async def get_biometric_photo_path(self, teacher_id: int) -> Optional[str]:
         """Получить путь к файлу фотографии преподавателя."""
-        sql = "SELECT photo_path FROM public.teacher_biometrics WHERE teacher_id = $1;"
+        sql = """
+            SELECT COALESCE(
+                (SELECT file_path FROM public.teacher_photos WHERE teacher_id = $1 AND is_primary = TRUE LIMIT 1),
+                (SELECT file_path FROM public.teacher_photos WHERE teacher_id = $1 ORDER BY created_at DESC LIMIT 1),
+                (SELECT photo_path FROM public.teacher_biometrics WHERE teacher_id = $1)
+            );
+        """
         return await self.conn.fetchval(sql, teacher_id)
 
     async def log_recognition(self, teacher_id: int, confidence: float) -> int:

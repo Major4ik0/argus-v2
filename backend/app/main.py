@@ -9,8 +9,10 @@ import asyncpg
 from starlette.responses import RedirectResponse
 
 from .core.config import settings
-from .core.database import init_db_pool, close_db_pool, get_db_connection, pool
+from .core import database as db_module
+from .core.database import init_db_pool, close_db_pool, get_db_connection
 from .api.v1.router import api_router
+from .api.v1.logs import setup_log_broadcaster
 from .services.camera import camera_service as face_recognition_service
 from .repositories.kiosk import KioskRepository
 
@@ -18,17 +20,21 @@ from .repositories.kiosk import KioskRepository
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Действия при старте
-    await init_db_pool()
-    app.state.db_pool = pool
+    try:
+        await init_db_pool()
+    except Exception as e:
+        print(f"[PostgreSQL] Ошибка при старте пула БД: {e}")
+    app.state.db_pool = db_module.pool
 
     # Инициализация сервиса распознавания лиц
     loop = asyncio.get_running_loop()
     face_recognition_service.ws_manager.set_loop(loop)
+    setup_log_broadcaster(loop)
 
     def db_log_callback(teacher_id: int, confidence: float):
         async def _log():
             try:
-                active_pool = getattr(app.state, "db_pool", pool)
+                active_pool = getattr(app.state, "db_pool", None) or db_module.pool
                 if active_pool:
                     async with active_pool.acquire() as conn:
                         repo = KioskRepository(conn)
@@ -40,7 +46,7 @@ async def lifespan(app: FastAPI):
     face_recognition_service.set_log_callback(db_log_callback)
 
     try:
-        active_pool = getattr(app.state, "db_pool", pool)
+        active_pool = getattr(app.state, "db_pool", None) or db_module.pool
         if active_pool:
             # Если дисковый кэш был пуст, выполняем синхронизацию из PostgreSQL
             if len(face_recognition_service.known_face_encodings) == 0:
@@ -52,11 +58,14 @@ async def lifespan(app: FastAPI):
                 settings_dict = await repo.get_settings()
                 face_recognition_service.start(
                     camera_source=str(settings_dict.get("camera_source", "0")),
-                    threshold=float(settings_dict.get("recognition_threshold", 0.32)),
+                    threshold=float(settings_dict.get("recognition_threshold", 0.48)),
                     idle_timeout=int(settings_dict.get("idle_timeout", 6)),
                     is_active=bool(settings_dict.get("is_active", True)),
                     flip_horizontal=bool(settings_dict.get("camera_flip", True)),
                 )
+        else:
+            # Если база данных недоступна, запускаем камеру с настройками по умолчанию
+            face_recognition_service.start()
     except Exception as e:
         print(f"Ошибка запуска видеоаналитики киоска: {e}")
 
@@ -75,9 +84,11 @@ app = FastAPI(
 )
 
 # Монтирование директории загруженных фото
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
+os.makedirs(os.path.join(UPLOAD_DIR, "teachers"), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "photos"), exist_ok=True)
+app.mount("/api/v1/uploads", StaticFiles(directory=UPLOAD_DIR), name="api_uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Настройка CORS
 app.add_middleware(

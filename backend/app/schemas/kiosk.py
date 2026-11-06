@@ -6,11 +6,16 @@ from pydantic import BaseModel, Field, ConfigDict
 class KioskSettingsSchema(BaseModel):
     """Настройки терминала и камеры."""
     camera_source: str = Field(default="0", description="Индекс USB камеры (0, 1) или RTSP-ссылка")
-    recognition_threshold: float = Field(default=0.32, ge=0.2, le=0.99, description="Порог уверенности распознавания лиц SFace (0.30 - 0.35)")
-    similarity_threshold: Optional[float] = Field(default=0.32, ge=0.2, le=0.99, description="Алиас для порога сходства")
-    carousel_interval: int = Field(default=12, ge=5, le=60, description="Интервал смены слайдов карусели в секундах")
-    idle_timeout: int = Field(default=20, ge=5, le=120, description="Таймаут возврата в карусель при отсутствии лица (сек)")
-    person_timeout: Optional[int] = Field(default=20, ge=5, le=120, description="Алиас для таймаута присутствия")
+    recognition_threshold: float = Field(default=0.48, ge=0.2, le=0.99, description="Порог уверенности распознавания лиц (0.30 - 0.55)")
+    similarity_threshold: Optional[float] = Field(default=0.48, ge=0.2, le=0.99, description="Алиас для порога сходства")
+    carousel_interval: int = Field(default=6, ge=3, le=60, description="Интервал смены слайдов карусели в секундах")
+    carousel_active: Optional[bool] = Field(default=True, description="Активность автопрокрутки табло")
+    start_day_mode: Optional[str] = Field(default="today", description="Режим колонок: today или monday")
+    font_scale: Optional[str] = Field(default="normal", description="Базовый размер шрифта: compact, normal или large")
+    font_scale_display: Optional[str] = Field(default="normal", description="Размер шрифта для табло: compact, normal или large")
+    font_scale_schedule: Optional[str] = Field(default="normal", description="Размер шрифта для расписания: compact, normal или large")
+    idle_timeout: int = Field(default=6, ge=5, le=120, description="Таймаут возврата в карусель при отсутствии лица (сек)")
+    person_timeout: Optional[int] = Field(default=6, ge=5, le=120, description="Алиас для таймаута присутствия")
     is_active: bool = Field(default=True, description="Флаг активности видеоаналитики")
     active: Optional[bool] = Field(default=True, description="Алиас для флага активности")
     camera_flip: Optional[bool] = Field(default=False, description="Зеркальное отображение камеры (по горизонтали)")
@@ -29,6 +34,7 @@ class TeacherBiometricStatusItem(BaseModel):
     cathedra_name: Optional[str] = None
     degree_short: Optional[str] = None
     has_photo: bool = False
+    photos_count: int = 0
     photo_url: Optional[str] = None
     updated_at: Optional[str] = None
     visits_today: int = 0

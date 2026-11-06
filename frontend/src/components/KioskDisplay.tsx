@@ -19,12 +19,14 @@ import {
   Sun,
   Moon,
   FlipHorizontal,
+  Volume2,
 } from 'lucide-react'
 import {
   fetchCarouselSchedule,
   fetchTeacherWeeklySchedule,
   fetchKioskSettings,
 } from '../api'
+import { useKioskSocket } from '../context/WebSocketContext'
 import type {
   CarouselSchedule,
   TeacherWeeklySchedule,
@@ -118,6 +120,60 @@ export const KioskDisplay: React.FC = () => {
   const [carouselData, setCarouselData] = useState<CarouselSchedule | null>(null)
   const [photoKey, setPhotoKey] = useState<number>(Date.now())
 
+  // Глобальные настройки табло из PostgreSQL
+  const [carouselInterval, setCarouselInterval] = useState<number>(6)
+  const [carouselActive, setCarouselActive] = useState<boolean>(true)
+  const [startDayMode, setStartDayMode] = useState<'today' | 'monday'>('today')
+  const [fontScale, setFontScale] = useState<'compact' | 'normal' | 'large'>('normal')
+  const [fontScaleSchedule, setFontScaleSchedule] = useState<'compact' | 'normal' | 'large'>('normal')
+  const [tickerText, setTickerText] = useState<string>('')
+  const [tickerActive, setTickerActive] = useState<boolean>(false)
+
+  const applyKioskSettings = (settings: any) => {
+    if (!settings) return
+    if (typeof settings.carousel_interval === 'number') {
+      setCarouselInterval(settings.carousel_interval)
+    }
+    if (typeof settings.carousel_active === 'boolean') {
+      setCarouselActive(settings.carousel_active)
+    }
+    if (settings.start_day_mode === 'today' || settings.start_day_mode === 'monday') {
+      setStartDayMode(settings.start_day_mode)
+    }
+    const displayScale = settings.font_scale_display || settings.font_scale
+    if (
+      displayScale === 'compact' ||
+      displayScale === 'normal' ||
+      displayScale === 'large'
+    ) {
+      setFontScale(displayScale)
+    }
+    const scheduleScale = settings.font_scale_schedule || settings.font_scale
+    if (
+      scheduleScale === 'compact' ||
+      scheduleScale === 'normal' ||
+      scheduleScale === 'large'
+    ) {
+      setFontScaleSchedule(scheduleScale)
+    }
+    if (typeof settings.ticker_text === 'string') {
+      setTickerText(settings.ticker_text)
+    }
+    if (typeof settings.ticker_active === 'boolean') {
+      setTickerActive(settings.ticker_active)
+    }
+    if (settings.idle_timeout) {
+      setMaxTimerSeconds(settings.idle_timeout)
+    }
+    if (typeof settings.camera_mirror === 'boolean') {
+      setIsCameraFlipped(settings.camera_mirror)
+      localStorage.setItem('kiosk_camera_flip', String(settings.camera_mirror))
+    } else if (typeof settings.camera_flip === 'boolean') {
+      setIsCameraFlipped(settings.camera_flip)
+      localStorage.setItem('kiosk_camera_flip', String(settings.camera_flip))
+    }
+  }
+
   // Персональные данные преподавателя (DialogNeiroSet.ui)
   const [activeTeacherSchedule, setActiveTeacherSchedule] = useState<TeacherWeeklySchedule | null>(null)
   const [teacherGreeting, setTeacherGreeting] = useState<string>('')
@@ -139,8 +195,12 @@ export const KioskDisplay: React.FC = () => {
   } | null>(null)
 
   // WebSocket статус и полноэкранный режим
-  const [isWsConnected, setIsWsConnected] = useState<boolean>(false)
+  const { isConnected: isWsConnected, lastMessage } = useKioskSocket()
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
+
+  // Защита от дублирования и параллельного спама запросов расписания
+  const currentTeacherIdRef = useRef<number | null>(null)
+  const isLoadingScheduleRef = useRef<boolean>(false)
 
   // Плавающее перетаскиваемое окно видеокамеры (работает на любых экранах: ноутбук, монитор, киоск)
   const [isVideoFloatingOpen, setIsVideoFloatingOpen] = useState<boolean>(() => {
@@ -167,9 +227,20 @@ export const KioskDisplay: React.FC = () => {
   // Плавная пошаговая прокрутка таблицы
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isPaused, setIsPaused] = useState<boolean>(false)
-  const pauseTimeoutRef = useRef<any>(null)
   const manualTimerRef = useRef<any>(null)
-  const wsRef = useRef<WebSocket | null>(null)
+
+  // Статус распознавания лиц в реальном времени
+  const [faceRecStatus, setFaceRecStatus] = useState<{
+    recognized: boolean
+    name: string | null
+    similarity: number
+    teacher_id: number | null
+  }>({
+    recognized: false,
+    name: null,
+    similarity: 0,
+    teacher_id: null,
+  })
 
   // 1. Часы реального времени
   useEffect(() => {
@@ -186,8 +257,8 @@ export const KioskDisplay: React.FC = () => {
         fetchKioskSettings(),
         fetchCarouselSchedule(),
       ])
-      if (settings?.idle_timeout) {
-        setMaxTimerSeconds(settings.idle_timeout)
+      if (settings) {
+        applyKioskSettings(settings)
       }
       setCarouselData(sched)
       setPhotoKey(Date.now())
@@ -198,6 +269,15 @@ export const KioskDisplay: React.FC = () => {
 
   useEffect(() => {
     loadKioskData()
+
+    // Локальное слушание обновлений настроек табло (из модалки админки)
+    const handleLocalSettingsUpdate = (e: any) => {
+      if (e?.detail) {
+        applyKioskSettings(e.detail)
+      }
+    }
+    window.addEventListener('kiosk_settings_updated', handleLocalSettingsUpdate)
+
     // Синхронизация темы инфотабло с бэкенда
     fetch('/api/v1/admin/settings')
       .then((r) => r.json())
@@ -213,15 +293,17 @@ export const KioskDisplay: React.FC = () => {
     fetch('/api/v1/kiosk/settings')
       .then((r) => r.json())
       .then((data) => {
-        if (data && typeof data.camera_flip === 'boolean') {
-          setIsCameraFlipped(data.camera_flip)
-          localStorage.setItem('kiosk_camera_flip', String(data.camera_flip))
+        if (data) {
+          applyKioskSettings(data)
         }
       })
       .catch(() => {})
 
     const refreshInterval = setInterval(loadKioskData, 5 * 60 * 1000)
-    return () => clearInterval(refreshInterval)
+    return () => {
+      window.removeEventListener('kiosk_settings_updated', handleLocalSettingsUpdate)
+      clearInterval(refreshInterval)
+    }
   }, [])
 
   // Преподаватели кафедры
@@ -229,62 +311,151 @@ export const KioskDisplay: React.FC = () => {
     return carouselData?.department_teachers || []
   }, [carouselData])
 
+  // Масштабирование шрифта плашек
+  const pillFontClass = useMemo(() => {
+    const scale = fontScaleSchedule || fontScale
+    switch (scale) {
+      case 'compact':
+        return 'text-[11px] py-0.5 px-1'
+      case 'large':
+        return 'text-sm py-1.5 px-2'
+      case 'normal':
+      default:
+        return 'text-xs py-1 px-1.5'
+    }
+  }, [fontScaleSchedule, fontScale])
+
   // Определяем сегодняшний день недели (1..7, где 7 - Воскресенье)
   const todayJs = currentTime.getDay() // 0 - Вс, 1 - Пн ... 6 - Сб
   const currentDayId = todayJs === 0 ? 7 : todayJs
 
-  // 3. Циклический сдвиг массива 7 дней недели, начиная со СЕГОДНЯШНЕГО дня:
+  // 3. Вычисление ровно 7 отображаемых колонок дней недели:
+  // При 'monday' — ровно 7 дней текущей недели с понедельника по воскресенье (ПН–ВС) с датами месяца.
+  // При 'today' — 7 дней начиная со сегодняшнего дня со сдвигом и датами месяца.
   const orderedDays = useMemo(() => {
-    const startIndex = BASE_DAYS.findIndex((d) => d.id === currentDayId)
-    if (startIndex === -1) return BASE_DAYS
-    return [
-      ...BASE_DAYS.slice(startIndex),
-      ...BASE_DAYS.slice(0, startIndex),
-    ]
-  }, [currentDayId])
+    const now = currentTime
+    const currentDay = now.getDay() === 0 ? 7 : now.getDay() // 1=Пн ... 7=Вс
 
-  // 4. Аккуратная пошаговая прокрутка строго по одному преподавателю
+    if (startDayMode === 'monday') {
+      const monday = new Date(now)
+      monday.setDate(now.getDate() - (currentDay - 1))
+
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(monday)
+        d.setDate(monday.getDate() + i)
+        const id = d.getDay() === 0 ? 7 : d.getDay()
+        const base = BASE_DAYS.find((b) => b.id === id) || BASE_DAYS[i]
+        const isToday =
+          d.getDate() === now.getDate() &&
+          d.getMonth() === now.getMonth() &&
+          d.getFullYear() === now.getFullYear()
+
+        return {
+          id,
+          name: base.name,
+          short: base.short,
+          dateNumber: d.getDate(),
+          dateStr: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`,
+          isWeekend: id === 7,
+          isToday,
+        }
+      })
+    }
+
+    // Режим 'today': 7 дней начиная со сегодняшнего дня
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now)
+      d.setDate(now.getDate() + i)
+      const id = d.getDay() === 0 ? 7 : d.getDay()
+      const base = BASE_DAYS.find((b) => b.id === id) || BASE_DAYS[0]
+      const isToday = i === 0
+
+      return {
+        id,
+        name: base.name,
+        short: base.short,
+        dateNumber: d.getDate(),
+        dateStr: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`,
+        isWeekend: id === 7,
+        isToday,
+      }
+    })
+  }, [currentTime, startDayMode])
+
+  // 4. Аккуратная пошаговая прокрутка строго по одному преподавателю с настраиваемым темпом
+  const scrollIntervalRef = useRef<any>(null)
+
   useEffect(() => {
+    if (scrollIntervalRef.current) {
+      clearInterval(scrollIntervalRef.current)
+      scrollIntervalRef.current = null
+    }
+
     if (mode !== 'carousel') return
     if (isPaused) return
+    if (!carouselActive) return
     if (teachersList.length <= 1) return
 
-    const scrollInterval = setInterval(() => {
-      if (!scrollRef.current) return
-      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
-      const firstBlock = scrollRef.current.querySelector('tbody') as HTMLElement | null
-      const teacherBlockHeight = firstBlock ? firstBlock.offsetHeight : 300
+    const container = scrollRef.current
+    if (!container) return
 
-      if (scrollTop + clientHeight >= scrollHeight - 10) {
-        // Дошли до конца — пауза 3 секунды и плавный возврат наверх
+    const intervalMs = Math.max(3, carouselInterval || 6) * 1000
+
+    scrollIntervalRef.current = setInterval(() => {
+      if (!scrollRef.current) return
+      const c = scrollRef.current
+      const maxScroll = c.scrollHeight - c.clientHeight
+
+      if (c.scrollTop >= maxScroll - 10) {
+        // Дошли до конца — пауза 2 секунды и плавный возврат наверх
         setTimeout(() => {
           scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-        }, 3000)
+        }, 1500)
       } else {
-        scrollRef.current.scrollBy({ top: teacherBlockHeight, behavior: 'smooth' })
+        // Скроллим на высоту одной строки преподавателя (блока из 4 пар)
+        const teacherBlock = (c.querySelector('.teacher-row-block') || c.querySelector('tbody')) as HTMLElement | null
+        const stepHeight = teacherBlock ? teacherBlock.offsetHeight : 240
+        c.scrollBy({ top: stepHeight, behavior: 'smooth' })
       }
-    }, 5500)
+    }, intervalMs)
 
-    return () => clearInterval(scrollInterval)
-  }, [mode, isPaused, teachersList.length])
+    return () => {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current)
+        scrollIntervalRef.current = null
+      }
+    }
+  }, [mode, isPaused, teachersList.length, carouselActive, carouselInterval, startDayMode])
 
-  // Приостановка автопрокрутки на 15 секунд при ручном взаимодействии пользователя
-  const handleUserInteraction = () => {
+  // Приостановка автопрокрутки при ручном взаимодействии пользователя
+  const [pauseCountdown, setPauseCountdown] = useState<number>(0)
+  const pauseIntervalRef = useRef<any>(null)
+
+  const handleUserInteraction = (seconds = 10) => {
     setIsPaused(true)
-    if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current)
-    pauseTimeoutRef.current = setTimeout(() => {
-      setIsPaused(false)
-    }, 15000)
+    setPauseCountdown(seconds)
+    if (pauseIntervalRef.current) clearInterval(pauseIntervalRef.current)
+    pauseIntervalRef.current = setInterval(() => {
+      setPauseCountdown((prev) => {
+        if (prev <= 1) {
+          if (pauseIntervalRef.current) clearInterval(pauseIntervalRef.current)
+          pauseIntervalRef.current = null
+          setIsPaused(false)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
   }
 
   // Ручные кнопки прокрутки на один блок преподавателя
   const handleScrollStep = (direction: 'up' | 'down') => {
-    handleUserInteraction()
+    handleUserInteraction(10)
     if (!scrollRef.current) return
-    const firstBlock = scrollRef.current.querySelector('tbody') as HTMLElement | null
-    const teacherBlockHeight = firstBlock ? firstBlock.offsetHeight : 300
+    const teacherBlock = (scrollRef.current.querySelector('.teacher-row-block') || scrollRef.current.querySelector('tbody')) as HTMLElement | null
+    const stepHeight = teacherBlock ? teacherBlock.offsetHeight : 240
     scrollRef.current.scrollBy({
-      top: direction === 'down' ? teacherBlockHeight : -teacherBlockHeight,
+      top: direction === 'down' ? stepHeight : -stepHeight,
       behavior: 'smooth',
     })
   }
@@ -308,10 +479,18 @@ export const KioskDisplay: React.FC = () => {
       academic_degree: activeTeacherSchedule?.academic_degree,
     })
 
-    // Если этот преподаватель уже отображается, не перегружаем повторно экран
-    if (mode === 'teacher' && activeTeacherSchedule?.teacher_id === teacherId) {
+    // Защита от дублирования и параллельного спама:
+    // если расписание уже загружается или уже отображается данный преподаватель - выходим
+    if (
+      currentTeacherIdRef.current === teacherId ||
+      isLoadingScheduleRef.current ||
+      (mode === 'teacher' && activeTeacherSchedule?.teacher_id === teacherId)
+    ) {
       return
     }
+
+    currentTeacherIdRef.current = teacherId
+    isLoadingScheduleRef.current = true
 
     try {
       const schedule = await fetchTeacherWeeklySchedule(teacherId)
@@ -326,12 +505,17 @@ export const KioskDisplay: React.FC = () => {
       }
     } catch (err) {
       console.error('Ошибка загрузки расписания преподавателя:', err)
+      // В случае ошибки сбрасываем ref для возможности повторной попытки
+      currentTeacherIdRef.current = null
+    } finally {
+      isLoadingScheduleRef.current = false
     }
   }
 
   // 6. Преподаватель отошел от экрана: запуск плавного 5-секундного таймера закрытия
   const handleTeacherDeparted = () => {
     setIsFaceDetected(false)
+    currentTeacherIdRef.current = null
     if (mode !== 'teacher') return
 
     // Запускаем 5-секундный таймер плавного возврата к общему табло
@@ -344,6 +528,7 @@ export const KioskDisplay: React.FC = () => {
             clearInterval(departureTimerRef.current)
             departureTimerRef.current = null
           }
+          currentTeacherIdRef.current = null
           setMode('carousel')
           setActiveTeacherSchedule(null)
           return null
@@ -357,8 +542,10 @@ export const KioskDisplay: React.FC = () => {
   const handleTeacherSelect = (t: TeacherDepartmentSchedule) => {
     handleUserInteraction()
     if (departureTimerRef.current) clearInterval(departureTimerRef.current)
+    departureTimerRef.current = null
     setDepartureCountdown(null)
     setIsFaceDetected(false) // Ручной выбор мышкой
+    currentTeacherIdRef.current = t.teacher_id
 
     setActiveTeacherSchedule({
       success: true,
@@ -395,6 +582,7 @@ export const KioskDisplay: React.FC = () => {
     if (manualTimerRef.current) clearInterval(manualTimerRef.current)
     setDepartureCountdown(null)
     setIsFaceDetected(false)
+    currentTeacherIdRef.current = null
     setMode('carousel')
     setActiveTeacherSchedule(null)
   }
@@ -410,6 +598,7 @@ export const KioskDisplay: React.FC = () => {
       setTimerSeconds((prev) => {
         if (prev <= 1) {
           if (manualTimerRef.current) clearInterval(manualTimerRef.current)
+          currentTeacherIdRef.current = null
           setMode('carousel')
           setActiveTeacherSchedule(null)
           return 0
@@ -423,80 +612,47 @@ export const KioskDisplay: React.FC = () => {
     }
   }, [mode, isFaceDetected])
 
-  // 8. WebSocket подключение для детекции лиц с камеры
+  // 8. Обработка событий из единого WebSocket-контекста
   useEffect(() => {
-    let ws: WebSocket | null = null
-    let reconnectTimeout: any = null
-    let pingInterval: any = null
+    if (!lastMessage) return
 
-    const connectWs = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/kiosk/ws`
-
-      try {
-        ws = new WebSocket(wsUrl)
-        wsRef.current = ws
-
-        ws.onopen = () => {
-          setIsWsConnected(true)
-          pingInterval = setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send('ping')
-            }
-          }, 8000)
-        }
-
-        ws.onmessage = (event) => {
-          setIsWsConnected(true)
-          try {
-            const data = JSON.parse(event.data)
-            if (data.event === 'CONNECTED') {
-              setIsWsConnected(true)
-            } else if (data.event === 'TEACHER_DETECTED') {
-              handleTeacherDetected(
-                data.teacher_id,
-                data.teacher_name,
-                data.confidence || 0.95
-              )
-            } else if (data.event === 'TIMEOUT_EXPIRED') {
-              handleTeacherDeparted()
-            } else if (data.event === 'THEME_CHANGED') {
-              if (data.kiosk_theme) {
-                setKioskTheme(data.kiosk_theme)
-                localStorage.setItem('kiosk_theme', data.kiosk_theme)
-              }
-            }
-          } catch {
-            // Игнорируем технические пакеты (pong и т.д.)
-          }
-        }
-
-        ws.onclose = () => {
-          setIsWsConnected(false)
-          if (pingInterval) clearInterval(pingInterval)
-          reconnectTimeout = setTimeout(connectWs, 3000)
-        }
-
-        ws.onerror = () => {
-          setIsWsConnected(false)
-          if (pingInterval) clearInterval(pingInterval)
-          ws?.close()
-        }
-      } catch {
-        setIsWsConnected(false)
-        if (pingInterval) clearInterval(pingInterval)
-        reconnectTimeout = setTimeout(connectWs, 3000)
+    try {
+      if (lastMessage.event === 'RELOAD_PAGE') {
+        window.location.reload()
+        return
       }
-    }
 
-    connectWs()
-
-    return () => {
-      if (pingInterval) clearInterval(pingInterval)
-      if (reconnectTimeout) clearTimeout(reconnectTimeout)
-      if (ws) ws.close()
+      if (lastMessage.type === 'FACE_RECOGNITION' || lastMessage.event === 'FACE_RECOGNITION') {
+        setFaceRecStatus({
+          recognized: !!lastMessage.recognized,
+          name: lastMessage.name ?? null,
+          similarity: Number(lastMessage.similarity) || 0,
+          teacher_id: lastMessage.teacher_id ?? null,
+        })
+      } else if (lastMessage.event === 'TEACHER_DETECTED') {
+        if (lastMessage.teacher_id) {
+          handleTeacherDetected(
+            lastMessage.teacher_id,
+            lastMessage.teacher_name || '',
+            lastMessage.confidence || 0.95
+          )
+        }
+      } else if (lastMessage.event === 'TIMEOUT_EXPIRED') {
+        handleTeacherDeparted()
+      } else if (lastMessage.event === 'THEME_CHANGED') {
+        if (lastMessage.kiosk_theme === 'light' || lastMessage.kiosk_theme === 'dark') {
+          setKioskTheme(lastMessage.kiosk_theme)
+          localStorage.setItem('kiosk_theme', lastMessage.kiosk_theme)
+        }
+      } else if (lastMessage.event === 'SETTINGS_UPDATED') {
+        if (lastMessage.settings) {
+          applyKioskSettings(lastMessage.settings)
+        }
+      }
+    } catch {
+      // Игнорируем технические пакеты
     }
-  }, [maxTimerSeconds, mode, activeTeacherSchedule?.teacher_id])
+  }, [lastMessage])
 
   // Полноэкранный режим
   const toggleFullscreen = () => {
@@ -747,9 +903,19 @@ export const KioskDisplay: React.FC = () => {
                 <span className={`font-medium ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
                   Всего: <strong className={isDark ? 'text-white' : 'text-slate-900'}>{teachersList.length}</strong>
                 </span>
+                <span className={isDark ? 'text-slate-600' : 'text-slate-400'}>•</span>
+                {carouselActive ? (
+                  <span className={`text-[11px] 2xl:text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Шаг: {carouselInterval} сек
+                  </span>
+                ) : (
+                  <span className="text-[11px] 2xl:text-xs text-amber-600 dark:text-amber-400 font-medium px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700">
+                    Автоскролл остановлен
+                  </span>
+                )}
                 {isPaused && (
-                  <span className="px-1.5 py-0.2 rounded text-[9px] 2xl:text-[10px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30">
-                    Пауза (15 с)
+                  <span className="px-2 py-0.5 rounded text-[10px] 2xl:text-xs font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse">
+                    {pauseCountdown > 0 ? `Пауза (${pauseCountdown} с)` : 'Пауза'}
                   </span>
                 )}
               </div>
@@ -786,12 +952,20 @@ export const KioskDisplay: React.FC = () => {
               </div>
             </div>
 
-            {/* Сводная таблица кафедры: Преподаватель (узкая колонка), Пара, 7 дней со старта от сегодня */}
+            {/* Сводная таблица кафедры: Преподаватель (узкая колонка), Пара, 7 дней недели */}
             <div
               ref={scrollRef}
               onMouseEnter={() => setIsPaused(true)}
-              onMouseLeave={() => setIsPaused(false)}
-              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative custom-scrollbar"
+              onMouseLeave={() => {
+                if (pauseCountdown === 0) setIsPaused(false)
+              }}
+              className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative custom-scrollbar ${
+                fontScale === 'compact'
+                  ? 'font-scale-compact text-[11px]'
+                  : fontScale === 'large'
+                  ? 'font-scale-large text-sm'
+                  : 'font-scale-normal text-xs'
+              }`}
             >
               <table className="w-full border-collapse text-left">
                 {/* Фиксированная шапка таблицы */}
@@ -817,42 +991,49 @@ export const KioskDisplay: React.FC = () => {
                     >
                       Пара
                     </th>
-                    {/* 3-9. 7 дней недели (начиная со СЕГОДНЯШНЕГО дня!) */}
+                    {/* 3-9. 7 дней недели (ПН–ВС) */}
                     {orderedDays.map((day) => {
-                      const isToday = currentDayId === day.id
                       return (
                         <th
-                          key={day.id}
+                          key={`${day.id}_${day.dateStr}`}
                           className={`p-1.5 2xl:p-2 text-center border-r last:border-r-0 transition ${
                             isDark
-                              ? isToday
+                              ? day.isToday
                                 ? 'bg-sky-950/60 text-sky-300 border-b-2 border-b-sky-500 border-r-slate-800'
                                 : day.isWeekend
                                 ? 'bg-rose-950/30 text-rose-300 border-r-slate-800'
                                 : 'bg-slate-900 text-slate-200 border-r-slate-800'
-                              : isToday
+                              : day.isToday
                               ? 'bg-sky-50 text-sky-900 border-b-2 border-b-sky-500 border-r-slate-300'
                               : day.isWeekend
                               ? 'bg-rose-50/60 text-rose-800 border-r-slate-300'
                               : 'bg-slate-100 text-slate-800 border-r-slate-300'
                           }`}
                         >
-                          <div className="flex items-center justify-center gap-1.5 font-black text-[10px] 2xl:text-xs uppercase tracking-wider">
-                            <span>{day.name}</span>
-                            {isToday && (
-                              <span className="px-1.5 py-0.2 rounded text-[8px] 2xl:text-[9px] bg-amber-400 text-slate-950 font-black uppercase tracking-wider shadow-sm">
-                                Сегодня
+                          <div className="flex flex-col items-center justify-center gap-0.5">
+                            <div className="flex items-center justify-center gap-1.5 font-black text-[10px] 2xl:text-xs uppercase tracking-wider">
+                              <span>{day.short}</span>
+                              <span className="font-mono text-[9px] 2xl:text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                {day.dateStr}
                               </span>
-                            )}
-                            {day.isWeekend && !isToday && (
-                              <span
-                                className={`px-1.5 py-0.2 rounded text-[8px] 2xl:text-[9px] font-bold ${
-                                  isDark ? 'bg-rose-900/50 text-rose-300' : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Выходной
-                              </span>
-                            )}
+                              {day.isToday && (
+                                <span className="px-1.5 py-0.2 rounded text-[8px] 2xl:text-[9px] bg-amber-400 text-slate-950 font-black uppercase tracking-wider shadow-sm">
+                                  Сегодня
+                                </span>
+                              )}
+                              {day.isWeekend && !day.isToday && (
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[8px] 2xl:text-[9px] font-bold ${
+                                    isDark ? 'bg-rose-900/50 text-rose-300' : 'bg-rose-100 text-rose-700'
+                                  }`}
+                                >
+                                  Выходной
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[8px] 2xl:text-[9px] font-medium text-slate-400 dark:text-slate-500 hidden sm:inline">
+                              {day.name}
+                            </span>
                           </div>
                         </th>
                       )
@@ -864,7 +1045,7 @@ export const KioskDisplay: React.FC = () => {
                   teachersList.map((teacher) => (
                     <tbody
                       key={teacher.teacher_id}
-                      className={`border-b-2 divide-y transition ${
+                      className={`teacher-row-block border-b-2 divide-y transition ${
                         isDark
                           ? 'border-slate-800 divide-slate-800/80 hover:bg-slate-800/30'
                           : 'border-slate-300 divide-slate-200 hover:bg-slate-50/50'
@@ -1014,25 +1195,25 @@ export const KioskDisplay: React.FC = () => {
                                     title={`${lessonTypeStr}\n${roomStr}\nГруппы: ${allGroupsTooltip}\n${courseStr}`}
                                   >
                                     {/* 1. Тип занятия */}
-                                    <div className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate">
+                                    <div className={`w-full bg-white text-slate-900 font-extrabold rounded-full text-center shadow-xs border border-slate-200/60 leading-tight truncate ${pillFontClass}`}>
                                       {lessonTypeStr}
                                     </div>
 
                                     {/* 2. Аудитория */}
-                                    <div className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate">
+                                    <div className={`w-full bg-white text-slate-900 font-extrabold rounded-full text-center shadow-xs border border-slate-200/60 leading-tight truncate ${pillFontClass}`}>
                                       {roomStr}
                                     </div>
 
                                     {/* 3. Группа / Поток */}
                                     <div
-                                      className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate"
+                                      className={`w-full bg-white text-slate-900 font-extrabold rounded-full text-center shadow-xs border border-slate-200/60 leading-tight truncate ${pillFontClass}`}
                                       title={allGroupsTooltip}
                                     >
                                       {groupBadge}
                                     </div>
 
                                     {/* 4. Шифр дисциплины */}
-                                    <div className="w-full bg-white text-slate-900 font-extrabold text-[9px] 2xl:text-[10px] rounded-full py-0.2 px-1 text-center shadow-xs border border-slate-200/60 leading-tight truncate">
+                                    <div className={`w-full bg-white text-slate-900 font-extrabold rounded-full text-center shadow-xs border border-slate-200/60 leading-tight truncate ${pillFontClass}`}>
                                       {courseStr}
                                     </div>
                                   </div>
@@ -1177,27 +1358,29 @@ export const KioskDisplay: React.FC = () => {
                   Пара / Время
                 </div>
                 {orderedDays.map((day) => {
-                  const isToday = currentDayId === day.id
                   return (
                     <div
-                      key={day.id}
+                      key={`${day.id}_${day.dateStr}`}
                       className={`p-1.5 2xl:p-2 border-r last:border-r-0 flex flex-col items-center justify-center transition ${
                         isDark
-                          ? isToday
+                          ? day.isToday
                             ? 'bg-sky-950/60 text-sky-300 border-b-2 border-b-sky-500 border-slate-800 font-black'
                             : day.isWeekend
                             ? 'bg-rose-950/30 text-rose-300 border-slate-800'
                             : 'text-slate-200 border-slate-800'
-                          : isToday
+                          : day.isToday
                           ? 'bg-sky-50 text-sky-900 border-b-2 border-b-sky-500 border-slate-300 font-black'
                           : day.isWeekend
                           ? 'bg-rose-50/60 text-rose-800 border-slate-300'
                           : 'text-slate-800 border-slate-300'
                       }`}
                     >
-                      <span className="uppercase tracking-wider">{day.name}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="uppercase tracking-wider font-bold">{day.short}</span>
+                        <span className="font-mono text-[9px] opacity-75">{day.dateStr}</span>
+                      </div>
                       <span className="text-[9px] opacity-75 font-normal">
-                        {isToday ? 'Сегодня' : day.isWeekend ? 'Выходной' : day.short}
+                        {day.isToday ? 'Сегодня' : day.isWeekend ? 'Выходной' : day.name}
                       </span>
                     </div>
                   )
@@ -1288,19 +1471,19 @@ export const KioskDisplay: React.FC = () => {
                               style={{ backgroundColor: fColor }}
                               title={`${lessonTypeStr}\n${roomStr}\nГруппы: ${allGroupsTooltip}\n${courseStr}`}
                             >
-                              <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate">
+                              <div className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight truncate ${pillFontClass}`}>
                                 {lessonTypeStr}
                               </div>
-                              <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate">
+                              <div className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight truncate ${pillFontClass}`}>
                                 {roomStr}
                               </div>
                               <div
-                                className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate"
+                                className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight truncate ${pillFontClass}`}
                                 title={allGroupsTooltip}
                               >
                                 {groupBadge}
                               </div>
-                              <div className="w-full bg-white text-slate-900 font-bold text-xs rounded-full py-0.5 px-2 text-center shadow-sm border border-slate-200/60 leading-tight truncate">
+                              <div className={`w-full bg-white text-slate-900 font-bold rounded-full text-center shadow-sm border border-slate-200/60 leading-tight truncate ${pillFontClass}`}>
                                 {courseStr}
                               </div>
                             </div>
@@ -1401,29 +1584,75 @@ export const KioskDisplay: React.FC = () => {
             </div>
           </div>
 
-          {/* Статусный подвал плавающего окна */}
+          {/* Статусный подвал плавающего окна с информацией о распознавании */}
           <div
-            className={`p-2.5 text-[10px] flex items-center justify-between border-t ${
-              isDark
-                ? 'bg-slate-950 border-slate-800 text-slate-300'
-                : 'bg-slate-50 border-slate-200 text-slate-700'
+            className={`p-2.5 text-xs font-semibold flex items-center justify-between border-t transition-colors ${
+              faceRecStatus.recognized
+                ? isDark
+                  ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : faceRecStatus.name === 'Я не знаю такого'
+                ? isDark
+                  ? 'bg-slate-900 border-slate-800 text-slate-400'
+                  : 'bg-slate-100 border-slate-300 text-slate-700'
+                : isDark
+                ? 'bg-slate-950 border-slate-900 text-slate-400'
+                : 'bg-slate-50 border-slate-200 text-slate-500'
             }`}
           >
-            <div className="truncate max-w-[200px]">
-              {lastRecognizedTeacher ? (
-                <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate block">
-                  Лицо: {lastRecognizedTeacher.full_name}
-                </span>
-              ) : (
-                <span className="text-slate-500 font-medium">Поиск лиц в кадре...</span>
-              )}
+            <div className="flex items-center gap-2 truncate max-w-[210px]">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  faceRecStatus.recognized
+                    ? 'bg-emerald-500 animate-pulse'
+                    : faceRecStatus.name === 'Я не знаю такого'
+                    ? 'bg-amber-500'
+                    : 'bg-slate-400'
+                }`}
+              />
+              <span className="truncate">
+                {faceRecStatus.recognized
+                  ? `Лицо: ${faceRecStatus.name}`
+                  : faceRecStatus.name === 'Я не знаю такого'
+                  ? 'Я не знаю такого'
+                  : lastRecognizedTeacher
+                  ? `Лицо: ${lastRecognizedTeacher.full_name}`
+                  : 'Подойдите к экрану'}
+              </span>
             </div>
-            <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-[10px]">
-              {isWsConnected ? 'Подключено' : 'Офлайн'}
-            </span>
+            {faceRecStatus.recognized && faceRecStatus.similarity > 0 ? (
+              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                {(faceRecStatus.similarity * 100).toFixed(0)}%
+              </span>
+            ) : (
+              <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-[10px]">
+                {isWsConnected ? 'AI Ready' : 'Офлайн'}
+              </span>
+            )}
           </div>
         </div>
       )}
+
+      {/* ================= БЕГУЩАЯ СТРОКА ОБЪЯВЛЕНИЙ ================= */}
+      {tickerActive && tickerText.trim() ? (
+        <div
+          className={`h-9 px-4 flex items-center overflow-hidden border-t z-20 shrink-0 font-medium ${
+            isDark
+              ? 'bg-amber-950/40 border-amber-800/60 text-amber-200'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}
+        >
+          <div className="flex items-center gap-2 shrink-0 pr-4 font-bold uppercase tracking-wider text-xs text-amber-600">
+            <Volume2 className="w-4 h-4 shrink-0 animate-pulse text-amber-500" />
+            <span>Объявление:</span>
+          </div>
+          <div className="relative overflow-hidden w-full whitespace-nowrap">
+            <div className="inline-block animate-marquee whitespace-nowrap text-sm font-medium">
+              {tickerText}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* ================= НИЖНЯЯ ПАНЕЛЬ С ЛЕГЕНДОЙ ФАКУЛЬТЕТОВ ПО ORGANIZE.UI ================= */}
       <footer

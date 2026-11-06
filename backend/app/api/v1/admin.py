@@ -14,12 +14,15 @@ from fastapi import APIRouter, HTTPException, Depends, status, Request
 from pydantic import BaseModel
 
 from ...services.ad_auth import authenticate_ad
-from ...core.config import settings, DB_CONFIG_PATH, write_db_config_file
+from ...core.config import settings, DB_CONFIG_PATH, write_db_config_file, write_security_config_file
 from ...core.database import get_db_connection, restart_db_pool
 from ...services.camera import camera_service as face_recognition_service
+from ...services.settings_service import settings_service, UnifiedConfigSchema
 from ...repositories.kiosk import KioskRepository
+from .logs import router as logs_router
 
 router = APIRouter()
+router.include_router(logs_router)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
 ADMINS_FILE = os.path.join(DATA_DIR, "admins.json")
@@ -367,6 +370,78 @@ async def update_site_settings(payload: UpdateSiteSettingsRequest):
     return current
 
 
+# =====================================================================
+# ЕДИНАЯ КОНФИГУРАЦИЯ ТЕРМИНАЛА И ТАБЛО (public.kiosk_settings)
+# =====================================================================
+
+@router.get("/config", summary="Получить полную конфигурацию терминала")
+async def get_admin_config(conn: Optional[asyncpg.Connection] = Depends(get_db_connection)):
+    """
+    Отдает полный объект конфигурации из public.kiosk_settings.
+    При недоступности БД возвращает дефолтные параметры без ошибки 500.
+    """
+    return await settings_service.get_config(conn=conn)
+
+
+@router.put("/config", summary="Обновить конфигурацию терминала")
+async def update_admin_config(
+    payload: Dict[str, Any],
+    conn: Optional[asyncpg.Connection] = Depends(get_db_connection),
+):
+    """
+    Обновляет параметры конфигурации в PostgreSQL и рассылает WebSocket-сообщение
+    SETTINGS_UPDATED на все подключенные экраны /display.
+    """
+    return await settings_service.update_config(payload, conn=conn)
+
+
+@router.post("/kiosk/reload", summary="Перезагрузка всех подключенных экранов табло")
+async def reload_kiosk_screens():
+    """
+    Отправляет в WebSocket событие RELOAD_PAGE, при получении которого
+    клиенты /display выполняют window.location.reload().
+    """
+    await face_recognition_service.ws_manager.broadcast({"event": "RELOAD_PAGE"})
+    return {
+        "success": True,
+        "message": "Команда перезагрузки отправлена на экраны табло",
+        "screens_notified": len(face_recognition_service.ws_manager.active_connections),
+    }
+
+
+class SecurityConfigPayload(BaseModel):
+    ad_server: str
+    ad_domain: str
+    initial_admin: str = "admin"
+    dev_mode: bool = True
+    dev_password: Optional[str] = None
+
+
+@router.get("/security/config", summary="Параметры безопасности и доменной авторизации")
+async def get_security_config():
+    return {
+        "ad_server": settings.ad_server,
+        "ad_domain": settings.ad_domain,
+        "initial_admin": settings.initial_admin,
+        "dev_mode": settings.dev_mode,
+        "dev_password": settings.dev_password,
+    }
+
+
+@router.post("/security/config", summary="Сохранение параметров безопасности и доменной авторизации")
+async def save_security_config(payload: SecurityConfigPayload):
+    data = {
+        "ad_server": payload.ad_server.strip(),
+        "ad_domain": payload.ad_domain.strip(),
+        "initial_admin": payload.initial_admin.strip(),
+        "dev_mode": payload.dev_mode,
+        "dev_password": payload.dev_password or settings.dev_password,
+    }
+    write_security_config_file(data)
+    settings.apply_custom_security_config()
+    return {"success": True, "message": "Параметры безопасности сохранены"}
+
+
 @router.get("/monitoring", summary="Сводный мониторинг работы сайта, БД и камеры")
 async def get_system_monitoring(conn: asyncpg.Connection = Depends(get_db_connection)):
     """
@@ -391,8 +466,8 @@ async def get_system_monitoring(conn: asyncpg.Connection = Depends(get_db_connec
         "is_running": face_recognition_service._running,
         "camera_source": face_recognition_service.camera_source,
         "recognition_threshold": face_recognition_service.recognition_threshold,
-        "detector_model": "OpenCV YuNet (face_detection_yunet.onnx)",
-        "recognizer_model": "OpenCV SFace (face_recognition_sface.onnx)",
+        "detector_model": getattr(face_recognition_service, "detector_model_name", "InsightFace SCRFD (det_10g.onnx)"),
+        "recognizer_model": getattr(face_recognition_service, "recognizer_model_name", "InsightFace ArcFace (w600k_r50.onnx)"),
         "enrolled_teachers_count": len(face_recognition_service.known_teachers),
         "active_teacher_id": face_recognition_service._active_teacher_id,
         "ws_active_clients": len(face_recognition_service.ws_manager.active_connections),

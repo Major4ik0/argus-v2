@@ -457,7 +457,7 @@ export const AdminKioskTab: React.FC<AdminKioskTabProps> = ({
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                     <span>0.25 (Мягкий)</span>
-                    <span>0.32 (Рекомендуемый SFace)</span>
+                    <span>0.48 (Рекомендуемый ArcFace)</span>
                     <span>0.80 (Строгий)</span>
                   </div>
                 </div>

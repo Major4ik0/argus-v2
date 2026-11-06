@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import axios from 'axios'
-import type { ReferencesData, ScheduleEvent } from './types/schedule'
+import type { ReferencesData, ScheduleEvent, KioskSettings } from './types/schedule'
+import { fetchKioskSettings } from './api'
+import { useKioskSocket } from './context/WebSocketContext'
 import { ModernCard } from './components/ModernCard'
 import { FacultyColorsModal, type FacultyItem } from './components/FacultyColorsModal'
 import { LoginPage } from './components/LoginPage'
-import { AdminManagementModal } from './components/AdminManagementModal'
+import { AdminPanel } from './pages/AdminPanel'
 import { LessonModal } from './components/LessonModal'
 import { SwapModal } from './components/SwapModal'
 import { ExcelImportModal } from './components/ExcelImportModal'
@@ -87,6 +89,11 @@ export function App() {
     return <KioskDisplay />
   }
 
+  // Прямой переход на автономную панель управления администратора
+  if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
+    return <AdminPanel />
+  }
+
   const [currentPage, setCurrentPage] = useState<'login' | 'schedule'>(() => {
     return localStorage.getItem('auth_token') ? 'schedule' : 'login'
   })
@@ -102,6 +109,35 @@ export function App() {
   const [currentUsername, setCurrentUsername] = useState<string>(() => {
     return localStorage.getItem('current_username') || ''
   })
+
+  // Глобальные настройки табло и расписания
+  const [kioskSettings, setKioskSettings] = useState<KioskSettings | null>(null)
+  const { lastMessage } = useKioskSocket()
+
+  useEffect(() => {
+    fetchKioskSettings()
+      .then((s) => {
+        if (s) setKioskSettings(s)
+      })
+      .catch(() => {})
+
+    const handleSettingsUpdate = (e: any) => {
+      if (e?.detail) {
+        setKioskSettings((prev) => ({ ...prev, ...e.detail }))
+      }
+    }
+    window.addEventListener('kiosk_settings_updated', handleSettingsUpdate)
+
+    return () => {
+      window.removeEventListener('kiosk_settings_updated', handleSettingsUpdate)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (lastMessage?.event === 'SETTINGS_UPDATED' && lastMessage?.settings) {
+      setKioskSettings((prev) => ({ ...prev, ...lastMessage.settings }))
+    }
+  }, [lastMessage])
 
   // Модальные окна
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false)
@@ -333,6 +369,21 @@ export function App() {
     return list
   }, [year, month, daysInMonth])
 
+  const scheduleFontScale =
+    kioskSettings?.font_scale_schedule || kioskSettings?.font_scale || 'normal'
+
+  const columnWidthClass = useMemo(() => {
+    switch (scheduleFontScale) {
+      case 'compact':
+        return 'w-[130px] min-w-[130px] max-w-[130px]'
+      case 'large':
+        return 'w-[160px] min-w-[160px] max-w-[160px]'
+      case 'normal':
+      default:
+        return 'w-[145px] min-w-[145px] max-w-[145px]'
+    }
+  }, [scheduleFontScale])
+
   const scrollToTodayColumn = () => {
     const now = new Date()
     const isCurrentRealMonth = now.getFullYear() === year && now.getMonth() === month
@@ -344,8 +395,28 @@ export function App() {
       const targetLeft = todayHeader.offsetLeft - 96 - 30
       container.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' })
     } else {
-      const targetScroll = Math.max(0, (now.getDate() - 2) * 145)
+      const colWidth = scheduleFontScale === 'compact' ? 130 : scheduleFontScale === 'large' ? 160 : 145
+      const targetScroll = Math.max(0, (now.getDate() - 2) * colWidth)
       container.scrollTo({ left: targetScroll, behavior: 'smooth' })
+    }
+  }
+
+  const scrollToTargetColumn = () => {
+    const now = new Date()
+    const isCurrentRealMonth = now.getFullYear() === year && now.getMonth() === month
+    if (!isCurrentRealMonth || !tableContainerRef.current) return
+
+    if (kioskSettings?.start_day_mode === 'monday') {
+      // Ищем понедельник текущей недели
+      const dayOfWeek = now.getDay() // 0 - Вс, 1 - Пн ... 6 - Сб
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+      const mondayDate = new Date(now)
+      mondayDate.setDate(now.getDate() + diffToMonday)
+
+      const targetDay = mondayDate.getMonth() === month ? mondayDate.getDate() : 1
+      scrollToDay(targetDay)
+    } else {
+      scrollToTodayColumn()
     }
   }
 
@@ -354,11 +425,11 @@ export function App() {
     const isCurrentRealMonth = now.getFullYear() === year && now.getMonth() === month
     if (isCurrentRealMonth && selectedTeachers.length > 0 && currentPage === 'schedule') {
       const timer = setTimeout(() => {
-        scrollToTodayColumn()
+        scrollToTargetColumn()
       }, 250)
       return () => clearTimeout(timer)
     }
-  }, [year, month, selectedTeachers.length, currentPage])
+  }, [year, month, selectedTeachers.length, currentPage, kioskSettings?.start_day_mode])
 
   const filteredTeachers = useMemo(() => {
     if (!refs?.teachers) return []
@@ -378,7 +449,8 @@ export function App() {
 
   const scrollToDay = (dayNumber: number) => {
     if (tableContainerRef.current) {
-      const targetScroll = Math.max(0, (dayNumber - 1) * 145)
+      const colWidth = scheduleFontScale === 'compact' ? 130 : scheduleFontScale === 'large' ? 160 : 145
+      const targetScroll = Math.max(0, (dayNumber - 1) * colWidth)
       tableContainerRef.current.scrollTo({ left: targetScroll, behavior: 'smooth' })
     }
   }
@@ -1224,7 +1296,16 @@ export function App() {
           )}
 
           {/* КОНТЕЙНЕР ТАБЛИЦЫ РАСПИСАНИЯ */}
-          <div ref={tableContainerRef} className="flex-1 overflow-auto bg-white dark:bg-slate-950 relative select-none">
+          <div
+            ref={tableContainerRef}
+            className={`flex-1 overflow-auto bg-white dark:bg-slate-950 relative select-none ${
+              scheduleFontScale === 'compact'
+                ? 'font-scale-compact text-[11px]'
+                : scheduleFontScale === 'large'
+                ? 'font-scale-large text-sm'
+                : 'font-scale-normal text-xs'
+            }`}
+          >
             {/* Печатный заголовок (виден только при выводе на печать) */}
             <div className="print-only pb-4 text-center">
               <h1 className="text-xl font-bold text-slate-900">
@@ -1253,7 +1334,7 @@ export function App() {
                       <th
                         key={d.day}
                         id={d.isToday ? 'today-column-header' : undefined}
-                        className={`w-[145px] min-w-[145px] max-w-[145px] p-2 text-center border-l transition-colors ${
+                        className={`${columnWidthClass} p-2 text-center border-l transition-colors ${
                           d.isToday
                             ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-950 dark:text-sky-100 border-x-2 border-x-sky-500 border-b-2 border-b-sky-500 shadow-sm'
                             : d.isSunday
@@ -1375,7 +1456,7 @@ export function App() {
                                     onDragOver={(e) => handleDragOver(e, cellKey)}
                                     onDragLeave={handleDragLeave}
                                     onDrop={() => handleDrop(tId, dateStr, hourIndex + 1)}
-                                    className={`w-[145px] min-w-[145px] max-w-[145px] p-1 border-l border-b border-slate-300 dark:border-slate-800/80 align-top relative group/cell ${
+                                    className={`${columnWidthClass} p-1 border-l border-b border-slate-300 dark:border-slate-800/80 align-top relative group/cell ${
                                       isDragTarget
                                         ? 'border-2 border-dashed border-sky-500 bg-sky-50 dark:bg-sky-950/60 scale-[0.98]'
                                         : isCellSelected
@@ -1402,6 +1483,7 @@ export function App() {
                                               teacherColor={teacherColor}
                                               facultyColors={facultyColorsMap}
                                               isDense={isDense}
+                                              fontScale={scheduleFontScale}
                                               isAdmin={isAdmin}
                                               isCut={isCutItem}
                                               isSelected={Boolean(isSelected)}
@@ -1519,13 +1601,13 @@ export function App() {
         }}
       />
 
-      <AdminManagementModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-        currentUser={currentUsername}
-        siteTheme={siteTheme}
-        onSiteThemeChange={setSiteTheme}
-      />
+      {isAdminModalOpen && (
+        <AdminPanel
+          isModal={true}
+          onClose={() => setIsAdminModalOpen(false)}
+          currentUser={currentUsername}
+        />
+      )}
 
       <LessonModal
         isOpen={lessonModalConfig.isOpen}

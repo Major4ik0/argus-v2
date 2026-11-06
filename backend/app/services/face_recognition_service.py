@@ -15,12 +15,14 @@ logger.setLevel(logging.INFO)
 
 # Пути к моделям InsightFace (Air-gapped)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODELS_DIR = os.path.join(BASE_DIR, "models", "insightface", "models", "buffalo_l")
-DET_MODEL_PATH = os.path.join(MODELS_DIR, "det_10g.onnx")
-REC_MODEL_PATH = os.path.join(MODELS_DIR, "w600k_r50.onnx")
+from .camera import _resolve_model_paths
+
+_det, _rec, _ = _resolve_model_paths()
+DET_MODEL_PATH = _det or os.path.join(BASE_DIR, "models", "insightface", "models", "buffalo_l", "det_10g.onnx")
+REC_MODEL_PATH = _rec or os.path.join(BASE_DIR, "models", "insightface", "models", "buffalo_l", "w600k_r50.onnx")
+
 PHOTOS_DIR = os.path.join(BASE_DIR, "uploads", "photos")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
-os.makedirs(MODELS_DIR, exist_ok=True)
 
 
 def is_valid_face_geometry(box, frame_w: int, frame_h: int) -> bool:
@@ -73,6 +75,9 @@ class SCRFDFaceDetector:
             if os.path.exists(self.model_path):
                 opts = ort.SessionOptions()
                 opts.intra_op_num_threads = 2
+                opts.inter_op_num_threads = 1
+                opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
                 self.session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
                 self.input_name = self.session.get_inputs()[0].name
                 logger.info(f"SCRFD-10G успешно загружен из {self.model_path}")
@@ -189,6 +194,9 @@ class ArcFaceFeatureExtractor:
             if os.path.exists(self.model_path):
                 opts = ort.SessionOptions()
                 opts.intra_op_num_threads = 2
+                opts.inter_op_num_threads = 1
+                opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
                 self.session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
                 self.input_name = self.session.get_inputs()[0].name
                 logger.info(f"ArcFace ResNet-50 успешно загружен из {self.model_path}")
@@ -329,6 +337,11 @@ class FaceRecognitionService:
         self._process_thread: Optional[threading.Thread] = None
         self._frame_queue: queue.Queue = queue.Queue(maxsize=1)
         self._frame_lock = threading.Lock()
+
+        # Кэширование детекций (Double Buffering)
+        self.results_lock = threading.Lock()
+        self.cached_detections: List[Dict[str, Any]] = []
+        self.last_detection_time: float = 0.0
 
         # Кадры
         self._raw_frame: Optional[np.ndarray] = None
@@ -539,6 +552,29 @@ class FaceRecognitionService:
         cv2.putText(frame, f"STATUS: IDLE | TIME: {t_str}", (20, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (148, 163, 184), 1)
         return frame
 
+    def _draw_detection(self, frame: np.ndarray, det: Dict[str, Any]):
+        """Отрисовка рамки и текста на свежем кадре без задержек."""
+        bbox = det.get("bbox")
+        if not bbox or len(bbox) < 4:
+            return
+        x, y, bw, bh = [int(v) for v in bbox[:4]]
+        color = det.get("color")
+        if color is None:
+            color = (16, 185, 129) if det.get("matched_id") else (11, 158, 245)
+        label = det.get("label")
+        if label is None:
+            name = det.get("name", "")
+            score = det.get("score", 0.0)
+            if det.get("matched_id"):
+                label = f"{name} ({score:.2f})"
+            else:
+                label = name or "Не опознан"
+
+        cv2.rectangle(frame, (x, y), (x + bw, y + bh), color, 2)
+        if label:
+            cv2.rectangle(frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
+            cv2.putText(frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
     def _capture_loop(self):
         """Непрерывный поток захвата кадров с камеры."""
         self.cap = self._open_camera()
@@ -560,26 +596,11 @@ class FaceRecognitionService:
                 frame = self._create_placeholder_frame(f"Ожидание камеры: {self.camera_source}")
                 time.sleep(0.04)
 
-            # Сохраняем чистый исходный кадр raw_frame
-            raw_copy = frame.copy()
+            # Сохраняем чистый исходный кадр raw_frame под минимальным замком
             with self._frame_lock:
-                self._raw_frame = raw_copy
-                if self._output_frame is None:
-                    self._output_frame = raw_copy
+                self._raw_frame = frame
 
-            # Передаем кадр в неблокирующую очередь обработки
-            if self.is_active:
-                if self._frame_queue.full():
-                    try:
-                        self._frame_queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                try:
-                    self._frame_queue.put_nowait((raw_copy, time.time()))
-                except queue.Full:
-                    pass
-
-            time.sleep(0.03)
+            time.sleep(0.01)
 
         if self.cap:
             try:
@@ -591,10 +612,13 @@ class FaceRecognitionService:
     def _process_loop(self):
         """Поток инференса: детекция лица, расчет эмбеддинга, поиск совпадений."""
         while self._running:
-            try:
-                raw_frame, ts = self._frame_queue.get(timeout=0.2)
-            except queue.Empty:
-                # Проверка таймаута неактивности, если лицо исчезло
+            with self._frame_lock:
+                if self._raw_frame is None:
+                    raw_frame = None
+                else:
+                    raw_frame = self._raw_frame.copy()
+
+            if raw_frame is None or not self.is_active:
                 if self._active_teacher_id is not None:
                     if time.time() - self._last_seen_time > self.idle_timeout:
                         logger.info("Таймаут присутствия преподавателя истек. Возврат в карусель.")
@@ -605,54 +629,91 @@ class FaceRecognitionService:
                             "event": "TIMEOUT_EXPIRED",
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                         })
+                time.sleep(0.02)
                 continue
 
-            if not self.is_active:
-                time.sleep(0.1)
-                continue
+            h, w = raw_frame.shape[:2]
+            if w > 640:
+                scale = 640.0 / w
+                small_frame = cv2.resize(raw_frame, (640, int(h * scale)))
+            else:
+                scale = 1.0
+                small_frame = raw_frame
 
-            annotated_frame = raw_frame.copy()
-            boxes = self.detector.detect(raw_frame, threshold=0.55)
+            boxes = self.detector.detect(small_frame, threshold=0.55)
 
+            inv_scale = 1.0 / scale if scale > 0 else 1.0
             detected_cand_id = None
             detected_cand_name = None
             max_sim = 0.0
+            detection_results = []
 
             if boxes:
                 # Сортировка по площади (w * h) - приоритет главного пользователя
                 boxes.sort(key=lambda b: b[2] * b[3], reverse=True)
-                x, y, bw, bh = boxes[0]
-                face_crop = raw_frame[max(0, y):min(raw_frame.shape[0], y + bh), max(0, x):min(raw_frame.shape[1], x + bw)]
+                for b in boxes:
+                    bx, by, bw_box, bh_box = b
+                    orig_x = max(0, int(bx * inv_scale))
+                    orig_y = max(0, int(by * inv_scale))
+                    orig_w = max(1, int(bw_box * inv_scale))
+                    orig_h = max(1, int(bh_box * inv_scale))
 
-                if face_crop.size > 0:
-                    face_emb = self.extractor.extract(face_crop)
+                    face_crop = raw_frame[orig_y:orig_y + orig_h, orig_x:orig_x + orig_w]
+                    face_emb = self.extractor.extract(face_crop) if face_crop.size > 0 else None
 
-                    # Сравнение с базой преподавателей через скалярное произведение
-                    with self._teachers_lock:
-                        candidates = list(self.known_teachers)
+                    item_matched_id = None
+                    item_matched_name = None
+                    item_max_sim = 0.0
 
-                    for teacher in candidates:
-                        sim = float(np.dot(teacher["vector"], face_emb))
-                        if sim > max_sim:
-                            max_sim = sim
-                            if sim >= self.recognition_threshold:
-                                detected_cand_id = teacher["teacher_id"]
-                                detected_cand_name = teacher["full_name"]
+                    if face_emb is not None:
+                        with self._teachers_lock:
+                            candidates = list(self.known_teachers)
 
-                # Отрисовка рамки на кадре мониторинга согласно правилам калибровки
-                if detected_cand_id:
-                    color = (16, 185, 129)  # Зеленый BGR
-                    label = f"{detected_cand_name} ({max_sim:.2f})"
-                    cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
-                    cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
-                    cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-                elif 0.15 <= max_sim < self.recognition_threshold:
-                    color = (11, 158, 245)  # Оранжевый BGR
-                    label = "Не опознан"
-                    cv2.rectangle(annotated_frame, (x, y), (x + bw, y + bh), color, 2)
-                    cv2.rectangle(annotated_frame, (x, max(0, y - 24)), (x + bw, y), color, -1)
-                    cv2.putText(annotated_frame, label, (x + 4, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-                # Если max_sim < 0.15, рамку не отрисовываем (игнор принтов и шумов)
+                        for teacher in candidates:
+                            sim = float(np.dot(teacher["vector"], face_emb))
+                            if sim > item_max_sim:
+                                item_max_sim = sim
+                                if sim >= self.recognition_threshold:
+                                    item_matched_id = teacher["teacher_id"]
+                                    item_matched_name = teacher["full_name"]
+
+                    if item_matched_id:
+                        color = (16, 185, 129)
+                        label = f"{item_matched_name} ({item_max_sim:.2f})"
+                        detection_results.append({
+                            "bbox": [orig_x, orig_y, orig_w, orig_h],
+                            "name": item_matched_name,
+                            "score": round(item_max_sim, 2),
+                            "matched_id": item_matched_id,
+                            "label": label,
+                            "color": color,
+                        })
+                    elif 0.15 <= item_max_sim < self.recognition_threshold:
+                        color = (11, 158, 245)
+                        label = "Не опознан"
+                        detection_results.append({
+                            "bbox": [orig_x, orig_y, orig_w, orig_h],
+                            "name": "Не опознан",
+                            "score": round(item_max_sim, 2),
+                            "matched_id": None,
+                            "label": label,
+                            "color": color,
+                        })
+
+                    if item_matched_id and detected_cand_id is None:
+                        max_sim = item_max_sim
+                        detected_cand_id = item_matched_id
+                        detected_cand_name = item_matched_name
+                    elif detected_cand_id is None and item_max_sim > max_sim:
+                        max_sim = item_max_sim
+
+            now = time.time()
+            with self.results_lock:
+                if detection_results:
+                    self.cached_detections = detection_results
+                    self.last_detection_time = now
+                elif (now - self.last_detection_time) >= 0.6:
+                    self.cached_detections = []
 
             # Логика дебаунсинга (подтверждение личности по 3 кадрам подряд)
             if detected_cand_id:
@@ -693,9 +754,6 @@ class FaceRecognitionService:
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                         })
 
-            with self._frame_lock:
-                self._output_frame = annotated_frame
-
     def get_raw_snapshot(self) -> Optional[np.ndarray]:
         """Захват чистого кадра с камеры (raw_frame, без рамок и меток)."""
         with self._frame_lock:
@@ -707,27 +765,53 @@ class FaceRecognitionService:
         """Возвращает байты JPEG чистого кадра."""
         frame = self.get_raw_snapshot()
         if frame is not None:
-            ret, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
+            ret, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
             if ret:
                 return buf.tobytes()
         return None
 
+    def get_jpeg_frame(self) -> Optional[bytes]:
+        """Неблокирующее получение кадра для веб-стриминга (30 FPS) с кэшированными рамками."""
+        with self._frame_lock:
+            if self._raw_frame is None:
+                frame = None
+            else:
+                frame = self._raw_frame.copy()
+
+        if frame is None:
+            placeholder = self._create_placeholder_frame("Connecting to camera...")
+            ok, jpeg = cv2.imencode('.jpg', placeholder, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+            if ok:
+                return jpeg.tobytes()
+            return None
+
+        # Double Buffering: безопасное чтение кэшированных рамок
+        with self.results_lock:
+            cached_results = list(self.cached_detections)
+            last_time = self.last_detection_time
+
+        if (time.time() - last_time) < 0.6 and cached_results:
+            for det in cached_results:
+                self._draw_detection(frame, det)
+
+        with self._frame_lock:
+            self._output_frame = frame
+
+        ok, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+        if not ok:
+            return None
+        return jpeg.tobytes()
+
     def generate_mjpeg_stream(self):
         """Генератор MJPEG потока для вывода видео в админ-панели."""
         while self._running:
-            with self._frame_lock:
-                frame = self._output_frame.copy() if self._output_frame is not None else None
-
-            if frame is None:
-                frame = self._create_placeholder_frame("Видеопоток формируется...")
-
-            ret, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if ret:
+            frame_bytes = self.get_jpeg_frame()
+            if frame_bytes:
                 yield (
                     b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
                 )
-            time.sleep(0.04)
+            time.sleep(0.033)
 
 
 # Глобальный синглтон сервиса и совместимый класс

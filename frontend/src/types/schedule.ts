@@ -331,13 +331,58 @@ export interface ExcelImportResponse {
   created_ids: number[]
 }
 
+export interface UnifiedKioskConfig {
+  carousel_interval: number
+  carousel_active: boolean
+  start_day_mode: 'monday' | 'today'
+  font_scale_display: 'compact' | 'normal' | 'large'
+  font_scale_schedule: 'compact' | 'normal' | 'large'
+  camera_source: string
+  camera_similarity_threshold: number
+  camera_mirror: boolean
+  ticker_text: string
+  ticker_active: boolean
+  night_mode_enabled: boolean
+  night_mode_start: string
+  night_mode_end: string
+  // Алиасы
+  recognition_threshold?: number
+  similarity_threshold?: number
+  camera_flip?: boolean
+  font_scale?: 'compact' | 'normal' | 'large'
+  idle_timeout?: number
+  is_active?: boolean
+}
+
 export interface KioskSettings {
   camera_source: string
   recognition_threshold: number
+  similarity_threshold?: number
+  camera_similarity_threshold?: number
   carousel_interval: number
+  carousel_active?: boolean
+  start_day_mode?: 'today' | 'monday'
+  font_scale?: 'compact' | 'normal' | 'large'
+  font_scale_display?: 'compact' | 'normal' | 'large'
+  font_scale_schedule?: 'compact' | 'normal' | 'large'
   idle_timeout: number
+  person_timeout?: number
   is_active: boolean
+  active?: boolean
   camera_flip?: boolean
+  camera_mirror?: boolean
+  ticker_text?: string
+  ticker_active?: boolean
+  night_mode_enabled?: boolean
+  night_mode_start?: string
+  night_mode_end?: string
+}
+
+export interface TeacherPhoto {
+  id: number
+  url: string
+  is_primary: boolean
+  created_at: string
 }
 
 export interface TeacherBiometricStatus {
@@ -350,6 +395,7 @@ export interface TeacherBiometricStatus {
   cathedra_name?: string
   degree_short?: string
   has_photo: boolean
+  photos_count?: number
   photo_url?: string
   updated_at?: string
   visits_today?: number
