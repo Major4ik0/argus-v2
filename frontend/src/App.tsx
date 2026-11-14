@@ -1021,6 +1021,17 @@ export function App() {
                     </button>
                   )}
 
+                  <button
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      window.location.href = '/kafedra/'
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl transition"
+                  >
+                    <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Личный состав</span>
+                  </button>
+
                   <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
 
                   <button
