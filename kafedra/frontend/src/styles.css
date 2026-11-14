@@ -1,0 +1,506 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Табель */
+.ts-dayoff {
+  background: #f1f3f5;
+}
+.ts-auto {
+  color: #868e96;
+  font-style: italic;
+}
+.ts-code-о { color: #2b8a3e; font-weight: 600; }
+.ts-code-б { color: #c92a2a; font-weight: 600; }
+.ts-code-к { color: #1864ab; font-weight: 600; }
+.ts-code-н { color: #e67700; font-weight: 600; }
+.ts-code-х { color: #862e9c; font-weight: 600; }
+.ts-code-з { color: #0b7285; font-weight: 600; }
+.ts-today {
+  box-shadow: inset 0 0 0 2px #4c6ef5;
+}
+
+/* Строевая записка: печатная форма */
+.roster-form {
+  font-family: "Times New Roman", serif;
+  color: #000;
+  max-width: 1000px;
+}
+.roster-form h2 {
+  text-align: center;
+  font-size: 16pt;
+  margin: 0;
+  text-transform: uppercase;
+}
+.roster-form .caption {
+  text-align: center;
+  font-size: 13pt;
+  margin: 4px 0 12px;
+}
+.roster-form table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11pt;
+}
+.roster-form th,
+.roster-form td {
+  border: 1px solid #000;
+  padding: 3px 6px;
+  text-align: center;
+}
+.roster-form td.label {
+  text-align: left;
+  font-weight: 600;
+}
+.roster-form .causes {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 11pt;
+}
+.roster-form .causes b {
+  display: block;
+  border-bottom: 1px solid #000;
+  margin-bottom: 4px;
+}
+/* клетки записки, которые можно править */
+.roster-form td:has(> .roster-cell) {
+  padding: 0;
+}
+.roster-cell {
+  width: 100%;
+  min-width: 2.5em;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  padding: 3px 4px;
+}
+.roster-cell:hover {
+  background: #f1f3f5;
+}
+.roster-cell:focus {
+  outline: 2px solid #4c6ef5;
+  background: #fff;
+}
+.roster-cell-override {
+  background: #fff3bf;
+}
+@media print {
+  .roster-cell-override {
+    background: transparent;
+  }
+}
+/* подпись под запиской — как на листе «Сводная»: по центру, «И.Фамилия» справа */
+.roster-signature {
+  margin-top: 28px;
+  font-size: 14pt;
+  text-align: center;
+  line-height: 1.35;
+}
+.roster-signature-name {
+  text-align: right;
+  padding-right: 4%;
+}
+.print-only {
+  display: none;
+}
+
+@media print {
+  .no-print,
+  .mantine-AppShell-header,
+  .mantine-AppShell-navbar {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .mantine-AppShell-main {
+    padding: 0 !important;
+  }
+  .roster-form {
+    page-break-after: always;
+    max-width: none;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+}
+
+/* График отпусков */
+.print-title {
+  text-align: center;
+  margin-bottom: 8px;
+  font-family: "Times New Roman", serif;
+}
+.gantt {
+  font-size: 12px;
+  border: 1px solid #dee2e6;
+}
+.gantt-row {
+  display: flex;
+  border-bottom: 1px solid #f1f3f5;
+  height: 22px;
+  align-items: center;
+}
+.gantt-head {
+  background: #f8f9fa;
+  font-weight: 600;
+}
+.gantt-name {
+  width: 170px;
+  flex: none;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gantt-track {
+  position: relative;
+  flex: 1;
+  height: 100%;
+}
+.gantt-month {
+  position: absolute;
+  top: 3px;
+  padding-left: 4px;
+}
+.gantt-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #e9ecef;
+}
+.gantt-bar {
+  position: absolute;
+  top: 5px;
+  height: 12px;
+  border-radius: 3px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* Диаграммы */
+.viz {
+  --text-secondary: #52514e;
+  font-size: 12px;
+}
+.viz-bar-row {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  border-radius: 4px;
+}
+.viz-bar-row:hover {
+  background: #f1f3f5;
+}
+.viz-bar-label {
+  width: 160px;
+  flex: none;
+  padding-right: 8px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.viz-bar-track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+.viz-bar {
+  height: 12px;
+  border-radius: 0 4px 4px 0;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.viz-bar-value {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.viz-heat {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.viz-heat th {
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 0 4px;
+}
+.viz-heat td {
+  width: 38px;
+  height: 22px;
+  text-align: center;
+  border-radius: 3px;
+  background: #f8f9fa;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.viz-heat td:hover {
+  outline: 2px solid #0b0b0b;
+}
+.viz-heat .viz-heat-label {
+  text-align: right;
+  white-space: nowrap;
+  color: #0b0b0b;
+}
+.viz-heat .viz-heat-total {
+  background: none;
+  font-weight: 600;
+}
+.viz-scale {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+.viz-scale i {
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* меню причин отсутствия в табеле */
+.ts-menu-code { display: inline-block; min-width: 18px; text-align: center; font-weight: 600; }
+
+/* «Дежурный по кафедре» в разделе «Дежурства» */
+.duty-today {
+  background: var(--mantine-color-indigo-0);
+  border-color: var(--mantine-color-indigo-3);
+}
+.duty-today-sep {
+  margin-left: 1.5em;
+  white-space: nowrap;
+}
+
+/* Режим демонстрации дежурства (DutyBoardPage) — табло на весь экран */
+.board {
+  --b-bg: #f4f6fb;
+  --b-card: #ffffff;
+  --b-line: #dde2ee;
+  --b-text: #1b2033;
+  --b-muted: #5f6782;
+  --b-accent: #3b4fc4;
+  --b-accent-soft: #e6e9fb;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vh, 28px);
+  padding: clamp(12px, 2.5vh, 36px) clamp(16px, 3vw, 56px);
+  background: var(--b-bg);
+  color: var(--b-text);
+}
+.board-dark {
+  --b-bg: #0f1220;
+  --b-card: #181c2e;
+  --b-line: #2b3150;
+  --b-text: #eef0f8;
+  --b-muted: #a3a9c4;
+  --b-accent: #8c9bff;
+  --b-accent-soft: #252c55;
+}
+.board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.board-dept {
+  font-size: clamp(20px, min(3vw, 5vh), 44px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.board-sub,
+.board-label {
+  color: var(--b-muted);
+  font-size: clamp(13px, 1.4vw, 22px);
+}
+.board-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.board-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.board-clock b {
+  font-size: clamp(28px, min(4.5vw, 7.5vh), 72px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.board-clock span {
+  color: var(--b-muted);
+  font-size: clamp(13px, 1.3vw, 22px);
+}
+.board-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.board-buttons button {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--b-line);
+  background: var(--b-card);
+  color: var(--b-text);
+  cursor: pointer;
+}
+.board-buttons button:hover {
+  border-color: var(--b-accent);
+}
+:fullscreen .board-buttons {
+  opacity: 0.25;
+}
+:fullscreen .board-buttons:hover {
+  opacity: 1;
+}
+.board-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: clamp(12px, 2vw, 32px);
+}
+.board-duty,
+.board-side {
+  background: var(--b-card);
+  border: 1px solid var(--b-line);
+  border-radius: 16px;
+  padding: clamp(16px, 3vh, 48px) clamp(16px, 2.5vw, 48px);
+  min-width: 0;
+}
+.board-duty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(6px, 1.2vh, 16px);
+  border-top: 6px solid var(--b-accent);
+}
+.board-duty-rank {
+  font-size: clamp(18px, 2.4vw, 40px);
+  color: var(--b-accent);
+  font-weight: 600;
+}
+.board-duty-name {
+  font-size: clamp(28px, min(4.6vw, 8vh), 84px);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.board-empty .board-duty-name {
+  color: var(--b-muted);
+}
+.board-duty-pos {
+  font-size: clamp(15px, 1.6vw, 28px);
+  color: var(--b-muted);
+}
+.board-tiles {
+  display: flex;
+  gap: clamp(8px, 1.5vw, 24px);
+  flex-wrap: wrap;
+  margin-top: clamp(8px, 2vh, 32px);
+}
+.board-tile {
+  background: var(--b-accent-soft);
+  border-radius: 12px;
+  padding: 10px 20px;
+  display: flex;
+  flex-direction: column;
+}
+.board-tile span {
+  color: var(--b-muted);
+  font-size: clamp(12px, 1.2vw, 20px);
+}
+.board-tile b {
+  font-size: clamp(22px, min(3vw, 5vh), 52px);
+  font-variant-numeric: tabular-nums;
+}
+.board-details {
+  list-style: none;
+  margin: clamp(8px, 1.5vh, 20px) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.2vh, 16px);
+}
+.board-details li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: clamp(6px, 1.2vh, 16px);
+  border-bottom: 1px solid var(--b-line);
+}
+.board-details li:last-child {
+  border-bottom: 0;
+}
+.board-type {
+  flex: none;
+  min-width: 3.4em;
+  text-align: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--b-accent-soft);
+  color: var(--b-accent);
+  font-weight: 700;
+  font-size: clamp(13px, min(1.4vw, 2.4vh), 24px);
+}
+.board-detail-name {
+  font-size: clamp(15px, min(1.9vw, 3vh), 32px);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.board-detail-title,
+.board-none {
+  color: var(--b-muted);
+  font-size: clamp(12px, 1.2vw, 20px);
+}
+.board-none {
+  margin-top: 10px;
+}
+.board-next {
+  margin-top: clamp(12px, 2.5vh, 40px);
+  padding-top: clamp(10px, 1.5vh, 24px);
+  border-top: 2px dashed var(--b-line);
+}
+.board-next-duty {
+  margin-top: 8px;
+  font-size: clamp(14px, 1.5vw, 24px);
+}
+.board-error {
+  background: #fff3cd;
+  color: #664d03;
+  border-radius: 8px;
+  padding: 8px 14px;
+}
+.board-loading {
+  flex: 1;
+  display: grid;
+  place-items: center;
+}
+@media (max-width: 900px) {
+  .board-main {
+    grid-template-columns: 1fr;
+  }
+  .board-clock {
+    align-items: flex-start;
+  }
+}
+.board-clock .board-fixed {
+  color: var(--b-accent);
+  font-weight: 600;
+}
