@@ -1,5 +1,6 @@
 # backend/app/api/v1/admin.py
 # -*- coding: utf-8 -*-
+import hashlib
 import os
 import sys
 import json
@@ -7,10 +8,10 @@ import asyncio
 import secrets
 import platform
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import cv2
 import asyncpg
-from fastapi import APIRouter, HTTPException, Depends, status, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Request, Response
 from pydantic import BaseModel
 
 from ...services.ad_auth import authenticate_ad
@@ -27,6 +28,8 @@ router.include_router(logs_router)
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
 ADMINS_FILE = os.path.join(DATA_DIR, "admins.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "site_settings.json")
+SESSIONS_FILE = os.path.join(DATA_DIR, "argus_sessions.json")
+ARGUS_SESSION_COOKIE = "argus_session"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 SUPERADMINS = {
@@ -35,12 +38,118 @@ SUPERADMINS = {
     "admin",
 }
 
+PERMISSION_KEYS = (
+    "can_view_admin",
+    "can_edit_schedule",
+    "can_manage_kiosk",
+    "can_manage_theming",
+    "can_view_kafedra",
+    "can_view_journal",
+)
+
+ADMIN_ROLE_KEYS = (
+    "can_view_admin",
+    "can_edit_schedule",
+    "can_manage_kiosk",
+    "can_manage_theming",
+)
+
 
 class AdminPermissions(BaseModel):
     can_view_admin: bool = True
     can_edit_schedule: bool = True
     can_manage_kiosk: bool = True
     can_manage_theming: bool = True
+    can_view_kafedra: bool = True
+    can_view_journal: bool = True
+
+
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _load_sessions() -> Dict[str, Dict[str, str]]:
+    if not os.path.exists(SESSIONS_FILE):
+        return {}
+    try:
+        with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_sessions(sessions: Dict[str, Dict[str, str]]) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(sessions, f, ensure_ascii=False, indent=2)
+
+
+def remember_argus_session(token: str, username: str, ttl_hours: int = 24 * 7) -> None:
+    clean_user = username.strip()
+    if not token or not clean_user:
+        return
+    now = datetime.now(timezone.utc)
+    sessions = _load_sessions()
+    # Удаляем просроченные сессии при записи
+    active: Dict[str, Dict[str, str]] = {}
+    for k, v in sessions.items():
+        try:
+            exp = datetime.fromisoformat(v.get("expires_at", ""))
+            if exp > now:
+                active[k] = v
+        except Exception:
+            continue
+    active[_token_digest(token)] = {
+        "username": clean_user,
+        "expires_at": (now + timedelta(hours=ttl_hours)).isoformat(),
+    }
+    _save_sessions(active)
+
+
+def resolve_argus_token(token: Optional[str]) -> Optional[str]:
+    if not token or token in ("guest_session", "dev_token"):
+        return None
+    sessions = _load_sessions()
+    entry = sessions.get(_token_digest(token))
+    if not entry:
+        return None
+    try:
+        exp = datetime.fromisoformat(entry.get("expires_at", ""))
+        if exp <= datetime.now(timezone.utc):
+            return None
+    except Exception:
+        return None
+    username = entry.get("username", "").strip()
+    return username or None
+
+
+def revoke_argus_session(token: Optional[str]) -> None:
+    if not token:
+        return
+    digest = _token_digest(token)
+    sessions = _load_sessions()
+    if digest in sessions:
+        sessions.pop(digest, None)
+        _save_sessions(sessions)
+
+
+def extract_argus_token(request: Request, explicit_token: Optional[str] = None) -> Optional[str]:
+    if explicit_token and explicit_token.strip():
+        return explicit_token.strip()
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        tok = auth[7:].strip()
+        if tok:
+            return tok
+    cookie_tok = request.cookies.get(ARGUS_SESSION_COOKIE)
+    if cookie_tok and cookie_tok.strip():
+        return cookie_tok.strip()
+    return None
+
+
+def _default_permissions_dict(value: bool = True) -> Dict[str, bool]:
+    return {k: value for k in PERMISSION_KEYS}
 
 
 def _load_admins() -> list:
@@ -54,15 +163,10 @@ def _load_admins() -> list:
         admins = []
 
     for a in admins:
-        if "permissions" not in a:
-            a["permissions"] = {
-                "can_view_admin": True,
-                "can_edit_schedule": True,
-                "can_manage_kiosk": True,
-                "can_manage_theming": True,
-            }
+        if "permissions" not in a or not isinstance(a["permissions"], dict):
+            a["permissions"] = _default_permissions_dict(True)
         else:
-            for k in ["can_view_admin", "can_edit_schedule", "can_manage_kiosk", "can_manage_theming"]:
+            for k in PERMISSION_KEYS:
                 if k not in a["permissions"]:
                     a["permissions"][k] = True
     return admins
@@ -100,7 +204,11 @@ def is_user_admin(username: str) -> bool:
     if u in SUPERADMINS:
         return True
     admins = _load_admins()
-    return any(a.get("username", "").lower() == u for a in admins)
+    for a in admins:
+        if a.get("username", "").lower() == u:
+            perms = a.get("permissions", {})
+            return any(bool(perms.get(k, True)) for k in ADMIN_ROLE_KEYS)
+    return False
 
 
 def is_superadmin(username: str) -> bool:
@@ -110,28 +218,13 @@ def is_superadmin(username: str) -> bool:
 def get_user_permissions(username: str) -> Dict[str, bool]:
     u = username.strip().lower()
     if is_superadmin(u):
-        return {
-            "can_view_admin": True,
-            "can_edit_schedule": True,
-            "can_manage_kiosk": True,
-            "can_manage_theming": True,
-        }
+        return _default_permissions_dict(True)
     admins = _load_admins()
     for a in admins:
         if a.get("username", "").lower() == u:
             perms = a.get("permissions", {})
-            return {
-                "can_view_admin": bool(perms.get("can_view_admin", True)),
-                "can_edit_schedule": bool(perms.get("can_edit_schedule", True)),
-                "can_manage_kiosk": bool(perms.get("can_manage_kiosk", True)),
-                "can_manage_theming": bool(perms.get("can_manage_theming", True)),
-            }
-    return {
-        "can_view_admin": False,
-        "can_edit_schedule": False,
-        "can_manage_kiosk": False,
-        "can_manage_theming": False,
-    }
+            return {k: bool(perms.get(k, True)) for k in PERMISSION_KEYS}
+    return _default_permissions_dict(False)
 
 
 class LoginRequest(BaseModel):
@@ -179,7 +272,7 @@ class UpdateSiteSettingsRequest(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse, summary="Авторизация через доменную сеть")
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest, response: Response):
     username = payload.login.strip()
     password = payload.password.strip()
 
@@ -197,12 +290,21 @@ async def login(payload: LoginRequest):
             detail="Неверный логин или пароль доменной сети"
         )
 
-    # 2. Определение прав
+    # 2. Определение прав и сохранение серверной сессии
     user_is_admin = is_user_admin(username)
     user_is_super = is_superadmin(username)
     perms_dict = get_user_permissions(username)
 
     token = secrets.token_hex(32)
+    remember_argus_session(token, username)
+    response.set_cookie(
+        ARGUS_SESSION_COOKIE,
+        token,
+        max_age=7 * 24 * 3600,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
 
     return LoginResponse(
         success=True,
@@ -213,6 +315,37 @@ async def login(payload: LoginRequest):
         message="Авторизация успешна",
         permissions=AdminPermissions(**perms_dict)
     )
+
+
+@router.post("/logout", summary="Завершение сессии АРГУС")
+async def logout(request: Request, response: Response):
+    tok = extract_argus_token(request)
+    revoke_argus_session(tok)
+    response.delete_cookie(ARGUS_SESSION_COOKIE, path="/")
+    response.delete_cookie("journal_session", path="/journal")
+    response.delete_cookie("kafedra_session", path="/kafedra/")
+    return {"success": True}
+
+
+@router.get("/me/permissions", summary="Актуальные права текущего пользователя")
+async def get_my_permissions(request: Request, token: Optional[str] = None):
+    tok = extract_argus_token(request, token)
+    username = resolve_argus_token(tok)
+    if not username:
+        return {
+            "authenticated": False,
+            "username": "",
+            "is_admin": False,
+            "is_superadmin": False,
+            "permissions": _default_permissions_dict(False),
+        }
+    return {
+        "authenticated": True,
+        "username": username,
+        "is_admin": is_user_admin(username),
+        "is_superadmin": is_superadmin(username),
+        "permissions": get_user_permissions(username),
+    }
 
 
 @router.get("/users", response_model=List[AdminUserItem], summary="Список администраторов с правами")
@@ -227,12 +360,7 @@ async def list_admins():
                 added_by="Система",
                 created_at="Бессрочно",
                 is_superadmin=True,
-                permissions=AdminPermissions(
-                    can_view_admin=True,
-                    can_edit_schedule=True,
-                    can_manage_kiosk=True,
-                    can_manage_theming=True
-                )
+                permissions=AdminPermissions(**_default_permissions_dict(True))
             ))
 
     for a in raw:
@@ -243,10 +371,7 @@ async def list_admins():
             created_at=a.get("created_at", ""),
             is_superadmin=is_superadmin(a["username"]),
             permissions=AdminPermissions(
-                can_view_admin=bool(perms.get("can_view_admin", True)),
-                can_edit_schedule=bool(perms.get("can_edit_schedule", True)),
-                can_manage_kiosk=bool(perms.get("can_manage_kiosk", True)),
-                can_manage_theming=bool(perms.get("can_manage_theming", True))
+                **{k: bool(perms.get(k, True)) for k in PERMISSION_KEYS}
             )
         ))
     return result
@@ -265,12 +390,7 @@ async def add_admin(payload: AddAdminRequest):
         raise HTTPException(status_code=400, detail="Укажите логин")
 
     admins = _load_admins()
-    perms_dict = payload.permissions.dict() if payload.permissions else {
-        "can_view_admin": True,
-        "can_edit_schedule": True,
-        "can_manage_kiosk": True,
-        "can_manage_theming": True,
-    }
+    perms_dict = payload.permissions.dict() if payload.permissions else _default_permissions_dict(True)
 
     found = False
     for a in admins:
@@ -464,6 +584,8 @@ async def get_system_monitoring(conn: asyncpg.Connection = Depends(get_db_connec
     vision_status = {
         "is_active": face_recognition_service.is_active,
         "is_running": face_recognition_service._running,
+        "camera_connected": getattr(face_recognition_service, "_camera_connected", False),
+        "camera_error": getattr(face_recognition_service, "_last_camera_error", None),
         "camera_source": face_recognition_service.camera_source,
         "recognition_threshold": face_recognition_service.recognition_threshold,
         "detector_model": getattr(face_recognition_service, "detector_model_name", "InsightFace SCRFD (det_10g.onnx)"),

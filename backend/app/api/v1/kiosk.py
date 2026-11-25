@@ -3,11 +3,12 @@ import os
 import io
 import time
 import base64
+import asyncio
 import logging
 import cv2
 import numpy as np
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, FileResponse, Response
 import asyncpg
 
@@ -30,29 +31,44 @@ logger = logging.getLogger("argus.kiosk")
 router = APIRouter()
 
 
-def frame_generator():
-    """Синхронный генератор кадров с паузой 0.033с (~30 FPS)."""
-    while True:
-        frame_bytes = face_recognition_service.get_jpeg_frame()
-        if frame_bytes:
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+async def frame_generator(request: Request):
+    """Асинхронный генератор MJPEG с кэшированием сжатия и мгновенным завершением при отключении клиента."""
+    last_sent_key = None
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+
+            frame_bytes, cur_key, is_live = await asyncio.to_thread(
+                face_recognition_service.get_jpeg_frame_with_meta
             )
-        time.sleep(0.033)
+            if frame_bytes and cur_key != last_sent_key:
+                last_sent_key = cur_key
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+            await asyncio.sleep(0.035 if is_live else 0.5)
+    except asyncio.CancelledError:
+        return
 
 
 @router.get("/video_feed", summary="MJPEG видеопоток с камеры")
-def video_feed():
+async def video_feed(request: Request):
     return StreamingResponse(
-        frame_generator(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        frame_generator(request),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
     )
 
 
 @router.get("/video-feed", include_in_schema=False)
-def get_video_feed_alias():
-    return video_feed()
+async def get_video_feed_alias(request: Request):
+    return await video_feed(request)
 
 
 @router.post("/camera/snapshot", response_model=CameraSnapshotResponse, summary="Захват текущего кадра с камеры")

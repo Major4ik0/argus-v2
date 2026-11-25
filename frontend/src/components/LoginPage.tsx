@@ -98,6 +98,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             can_edit_schedule: true,
             can_manage_kiosk: true,
             can_manage_theming: true,
+            can_view_kafedra: true,
+            can_view_journal: true,
           }
           localStorage.setItem('user_permissions', JSON.stringify(defaultPerms))
           onLoginSuccess('admin', true, 'admin', defaultPerms)
@@ -112,8 +114,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   // Гостевой вход без ввода пароля с сохранением токена
   const handleGuestEntry = () => {
+    axios.post('/api/v1/admin/logout').catch(() => {})
     localStorage.setItem('auth_token', 'guest_session')
-    onLoginSuccess('user', false, 'Гость')
+    localStorage.removeItem('user_permissions')
+    onLoginSuccess('user', false, 'Гость', null)
   }
 
   return (

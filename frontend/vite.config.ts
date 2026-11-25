@@ -23,6 +23,16 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/kafedra': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/journal': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })

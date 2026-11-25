@@ -34,6 +34,8 @@ export interface AdminPermissions {
   can_edit_schedule: boolean
   can_manage_kiosk: boolean
   can_manage_theming: boolean
+  can_view_kafedra: boolean
+  can_view_journal: boolean
 }
 
 export interface AdminUserItem {
@@ -194,6 +196,8 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
     can_edit_schedule: true,
     can_manage_kiosk: true,
     can_manage_theming: true,
+    can_view_kafedra: true,
+    can_view_journal: true,
   })
   const [adminsLoading, setAdminsLoading] = useState(false)
   const [accessError, setAccessError] = useState<string | null>(null)
@@ -704,7 +708,7 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
                 </div>
 
                 {/* Настройка прав при создании */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
                   <label className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] cursor-pointer">
                     <input
                       type="checkbox"
@@ -751,6 +755,30 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
                       className="rounded text-indigo-600 focus:ring-0"
                     />
                     <span>Управление темами</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newPermissions.can_view_kafedra}
+                      onChange={(e) =>
+                        setNewPermissions({ ...newPermissions, can_view_kafedra: e.target.checked })
+                      }
+                      className="rounded text-emerald-600 focus:ring-0"
+                    />
+                    <span>Личный состав</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newPermissions.can_view_journal}
+                      onChange={(e) =>
+                        setNewPermissions({ ...newPermissions, can_view_journal: e.target.checked })
+                      }
+                      className="rounded text-sky-600 focus:ring-0"
+                    />
+                    <span>Электронный журнал</span>
                   </label>
                 </div>
 
@@ -841,6 +869,32 @@ export const AdminManagementModal: React.FC<AdminManagementModalProps> = ({
                             className="rounded text-indigo-600 focus:ring-0"
                           />
                           <span>Темы</span>
+                        </label>
+
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            disabled={admin.is_superadmin}
+                            checked={admin.permissions.can_view_kafedra}
+                            onChange={() =>
+                              handleTogglePermission(admin.username, admin.permissions, 'can_view_kafedra')
+                            }
+                            className="rounded text-emerald-600 focus:ring-0"
+                          />
+                          <span>Личный состав</span>
+                        </label>
+
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            disabled={admin.is_superadmin}
+                            checked={admin.permissions.can_view_journal}
+                            onChange={() =>
+                              handleTogglePermission(admin.username, admin.permissions, 'can_view_journal')
+                            }
+                            className="rounded text-sky-600 focus:ring-0"
+                          />
+                          <span>Электронный журнал</span>
                         </label>
 
                         {!admin.is_superadmin && (
