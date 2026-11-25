@@ -13,6 +13,16 @@ from typing import List, Dict, Any, Optional, Tuple, Callable
 import cv2
 import numpy as np
 
+# Ограничиваем пул потоков OpenCV и убираем лишний шум C++ предупреждений в логах
+try:
+    cv2.setNumThreads(2)
+except Exception:
+    pass
+try:
+    cv2.setLogLevel(2)
+except Exception:
+    pass
+
 logger = logging.getLogger("argus.camera")
 logger.setLevel(logging.INFO)
 
@@ -137,23 +147,31 @@ class InsightFaceVision:
         self.rec_input_name = None
         self._lock = threading.Lock()
 
-        # Предварительный расчет опорных центров (anchors) для SCRFD (вход 640x640)
-        self._anchors: Dict[int, np.ndarray] = {}
-        for s in [8, 16, 32]:
-            gh, gw = 640 // s, 640 // s
-            grid_y, grid_x = np.meshgrid(np.arange(gh), np.arange(gw), indexing="ij")
-            centers = np.stack([grid_x.ravel() * s, grid_y.ravel() * s], axis=-1)
-            self._anchors[s] = np.repeat(centers, 2, axis=0).astype(np.float32)
+        # Предварительный расчет опорных центров (anchors) для SCRFD (поддержка 320x320 и 640x640)
+        self._anchors: Dict[Tuple[int, int], np.ndarray] = {}
+        for dsz in (320, 640):
+            for s in (8, 16, 32):
+                gh, gw = dsz // s, dsz // s
+                grid_y, grid_x = np.meshgrid(np.arange(gh), np.arange(gw), indexing="ij")
+                centers = np.stack([grid_x.ravel() * s, grid_y.ravel() * s], axis=-1)
+                self._anchors[(dsz, s)] = np.repeat(centers, 2, axis=0).astype(np.float32)
 
         self._init_models()
 
     def _init_models(self):
         import onnxruntime as ort
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 2
+        # Ограничение 1 потоком и отключение spin-wait гарантирует, что CPU сервера не упрется в 100%
+        opts.intra_op_num_threads = 1
         opts.inter_op_num_threads = 1
         opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        opts.log_severity_level = 3
+        try:
+            opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+            opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
+        except Exception:
+            pass
 
         self.det_session = ort.InferenceSession(self.det_path, opts, providers=["CPUExecutionProvider"])
         self.det_input_name = self.det_session.get_inputs()[0].name
@@ -165,28 +183,37 @@ class InsightFaceVision:
         logger.info(msg)
         print(msg)
 
-    def detect_and_align(self, img_bgr: np.ndarray) -> List[Tuple[Tuple[int, int, int, int], np.ndarray, float]]:
+    def detect_and_align(
+        self,
+        img_bgr: np.ndarray,
+        max_faces: Optional[int] = None,
+        det_size: int = 640,
+        skip_arcface: bool = False,
+    ) -> List[Tuple[Tuple[int, int, int, int], np.ndarray, float]]:
         if img_bgr is None or img_bgr.size == 0 or self.det_session is None or self.rec_session is None:
             return []
+
+        if det_size not in (320, 640):
+            det_size = 640
 
         h, w = img_bgr.shape[:2]
         with self._lock:
             try:
-                # Масштабирование кадра под входной размер SCRFD (640, 640) с сохранением пропорций
+                # Масштабирование кадра под целевой вход SCRFD (320x320 для стрима или 640x640 для фото)
                 im_ratio = float(h) / float(w)
                 if im_ratio > 1.0:
-                    new_h = 640
-                    new_w = int(new_h / im_ratio)
+                    new_h = det_size
+                    new_w = max(1, int(new_h / im_ratio))
                 else:
-                    new_w = 640
-                    new_h = int(new_w * im_ratio)
+                    new_w = det_size
+                    new_h = max(1, int(new_w * im_ratio))
 
                 resized_img = cv2.resize(img_bgr, (new_w, new_h))
-                det_img = np.zeros((640, 640, 3), dtype=np.uint8)
+                det_img = np.zeros((det_size, det_size, 3), dtype=np.uint8)
                 det_img[0:new_h, 0:new_w, :] = resized_img
 
                 blob = cv2.dnn.blobFromImage(
-                    det_img, 1.0 / 128.0, (640, 640), (127.5, 127.5, 127.5), swapRB=True
+                    det_img, 1.0 / 128.0, (det_size, det_size), (127.5, 127.5, 127.5), swapRB=True
                 )
                 net_outs = self.det_session.run(None, {self.det_input_name: blob})
 
@@ -205,13 +232,14 @@ class InsightFaceVision:
                 candidates_boxes = []
                 candidates_scores = []
 
-                for s, n_anchors in [(8, 12800), (16, 3200), (32, 800)]:
+                for s in (8, 16, 32):
+                    n_anchors = (det_size // s) ** 2 * 2
                     score_arr = scores_by_len.get(n_anchors)
                     bbox_arr = bboxes_by_len.get(n_anchors)
                     if score_arr is None or bbox_arr is None:
                         continue
 
-                    anchors = self._anchors[s]
+                    anchors = self._anchors[(det_size, s)]
                     pos_mask = (score_arr[:, 0] >= 0.55)
                     if not np.any(pos_mask):
                         continue
@@ -240,13 +268,22 @@ class InsightFaceVision:
                 if len(nms_indices) == 0:
                     return []
 
+                sorted_indices = sorted(
+                    nms_indices.flatten(),
+                    key=lambda idx: candidates_boxes[idx][2] * candidates_boxes[idx][3],
+                    reverse=True,
+                )
+
                 results = []
-                for i in nms_indices.flatten():
+                for rank, i in enumerate(sorted_indices):
                     box = candidates_boxes[i]
                     sc = candidates_scores[i]
                     bx, by, bw_box, bh_box = box
-                    face_crop = img_bgr[by:by + bh_box, bx:bx + bw_box]
-                    feat = self._extract_arcface(face_crop)
+                    if skip_arcface or (max_faces is not None and rank >= max_faces):
+                        feat = np.zeros(512, dtype=np.float32)
+                    else:
+                        face_crop = img_bgr[by:by + bh_box, bx:bx + bw_box]
+                        feat = self._extract_arcface(face_crop)
                     results.append(((bx, by, bw_box, bh_box), feat, sc))
 
                 return results
@@ -325,6 +362,10 @@ class KioskWebSocketManager:
                         self.active_connections.remove(dc)
 
     def broadcast_from_thread(self, message: dict):
+        with self._lock:
+            has_clients = bool(self.active_connections)
+        if not has_clients:
+            return
         if self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self.broadcast(message), self.loop)
 
@@ -382,6 +423,8 @@ class FaceRecognitionCamera:
         self.is_active: bool = True
 
         self._running: bool = False
+        self._lifecycle_lock = threading.Lock()
+        self._session_stop: Optional[threading.Event] = None
         self.stop_event: threading.Event = threading.Event()
         self._capture_thread: Optional[threading.Thread] = None
         self._process_thread: Optional[threading.Thread] = None
@@ -389,6 +432,17 @@ class FaceRecognitionCamera:
         self._frame_queue: queue.Queue = self.frame_queue
         self.frame_lock = threading.Lock()
         self._frame_lock = self.frame_lock
+
+        # Счетчики последовательности кадров и детекций + кэш JPEG
+        self._frame_seq: int = 0
+        self._det_seq: int = 0
+        self._jpeg_cache_lock = threading.Lock()
+        self._cached_jpeg: Optional[bytes] = None
+        self._cached_jpeg_key: Optional[Tuple[int, bool, int]] = None
+        self._placeholder_jpeg: Optional[bytes] = None
+        self._placeholder_ts: float = 0.0
+        self._camera_connected: bool = False
+        self._last_camera_error: Optional[str] = None
 
         # Замок и переменные для кэширования детекций (Double Buffering)
         self.results_lock = threading.Lock()
@@ -430,11 +484,8 @@ class FaceRecognitionCamera:
 
         self.log_callback: Optional[Callable[[int, float], Any]] = None
 
-        # Синхронная загрузка базы эталонов при старте (архитектура VisionAttend)
+        # Синхронная загрузка базы эталонов при старте (потоки камеры запускаются в lifespan)
         self.load_known_faces()
-
-        # Автозапуск рабочих потоков видеозахвата
-        self.start_threads()
 
     def _extract_face_embedding(self, image_path: str) -> Optional[np.ndarray]:
         """Извлечение 512-мерного L2-нормализованного вектора лица из файла изображения."""
@@ -818,33 +869,50 @@ class FaceRecognitionCamera:
 
     def _open_capture_device(self, source) -> Optional[cv2.VideoCapture]:
         """Открытие камеры с учетом платформы и минимальным буфером."""
-        # Если передан индекс в виде строки "0"
-        if isinstance(source, str) and source.isdigit():
-            source = int(source)
+        if isinstance(source, str):
+            source = source.strip()
+            if source.isdigit():
+                source = int(source)
 
         if isinstance(source, str) and source.startswith(('rtsp://', 'http://', 'https://')):
             try:
-                cap = cv2.VideoCapture(source)
+                # Используем TCP и таймаут 5с, чтобы мертвые RTSP потоки не вешали поток навсегда
+                if "OPENCV_FFMPEG_CAPTURE_OPTIONS" not in os.environ:
+                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
+                cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                if not cap or not cap.isOpened():
+                    cap = cv2.VideoCapture(source)
                 if cap and cap.isOpened():
                     try:
                         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     except Exception:
                         pass
                     return cap
+                if cap:
+                    cap.release()
             except Exception as e:
-                logger.error(f"Ошибка подключения к потоку {source}: {e}")
+                logger.warning(f"[Камера] Ошибка подключения к потоку {source}: {e}")
             return None
 
-        backend = cv2.CAP_ANY
-        if platform.system() == "Darwin" and isinstance(source, int):
-            # На macOS обязательно используем AVFoundation для стабильной работы с правами ОС
-            backend = cv2.CAP_AVFOUNDATION
+        sys_name = platform.system()
+        backends: List[int] = [cv2.CAP_ANY]
+        if isinstance(source, int):
+            if sys_name == "Darwin":
+                backends = [cv2.CAP_AVFOUNDATION]
+            elif sys_name == "Linux":
+                backends = [cv2.CAP_V4L2, cv2.CAP_ANY]
 
-        try:
-            cap = cv2.VideoCapture(source, backend)
-        except Exception as e:
-            logger.warning(f"Ошибка вызова VideoCapture({source}): {e}")
-            cap = None
+        cap = None
+        for backend in backends:
+            try:
+                cand = cv2.VideoCapture(source, backend)
+                if cand is not None and cand.isOpened():
+                    cap = cand
+                    break
+                if cand is not None:
+                    cand.release()
+            except Exception as e:
+                logger.warning(f"[Камера] Ошибка вызова VideoCapture({source}): {e}")
 
         if cap is not None:
             # Сброс буфера до 1 кадра: устраняет лаги, рассинхрон и задержку видео
@@ -852,6 +920,13 @@ class FaceRecognitionCamera:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             except Exception:
                 pass
+
+            # На Linux для USB-камер пробуем MJPG для снижения нагрузки на USB-шину и CPU
+            if sys_name == "Linux" and isinstance(source, int):
+                try:
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                except Exception:
+                    pass
 
             # Задаем стабильное разрешение и частоту
             try:
@@ -861,61 +936,78 @@ class FaceRecognitionCamera:
             except Exception:
                 pass
 
-            # Если индекс 0 на Mac не открылся (занят FaceTime/Continuity), пробуем 1
-            if not cap.isOpened() and isinstance(source, int) and source == 0:
-                print("[Camera] Индекс 0 недоступен, попытка переключения на камеру 1...")
-                try:
-                    cap = cv2.VideoCapture(1, backend)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                    cap.set(cv2.CAP_PROP_FPS, 30)
-                except Exception:
-                    pass
-
         return cap
 
     def _open_camera(self) -> Optional[cv2.VideoCapture]:
         return self._open_capture_device(self.camera_source)
 
-    def get_jpeg_frame(self) -> Optional[bytes]:
+    def get_jpeg_frame_with_meta(self) -> Tuple[Optional[bytes], Tuple[Any, ...], bool]:
         """
-        Неблокирующее получение кадра для стрима со скоростью 30 FPS.
-        Замок frame_lock удерживается только на время быстрого копирования кадра (1-2 мс).
-        Детекции накладываются из кэша (Double Buffering), если они получены < 0.6 сек назад.
+        Неблокирующее получение JPEG кадра с кэшированием сжатия.
+        Даже при 10 открытых вкладках cv2.imencode выполняется не более 1 раза на кадр.
+        Возвращает: (jpeg_bytes, cache_key, is_live).
         """
         with self.frame_lock:
-            if self.raw_frame is None:
-                frame = None
-            else:
-                frame = self.raw_frame.copy()
+            frame = self.raw_frame
+            cur_seq = self._frame_seq
 
         if frame is None:
-            placeholder = self._create_placeholder_frame("Connecting to camera...")
-            ok, jpeg = cv2.imencode('.jpg', placeholder, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
-            if ok:
-                return jpeg.tobytes()
-            return None
+            now = time.time()
+            with self._jpeg_cache_lock:
+                # Обновляем заглушку максимум 1 раз в секунду вместо 30 раз/сек
+                if self._placeholder_jpeg is not None and (now - self._placeholder_ts) < 1.0:
+                    return self._placeholder_jpeg, ("placeholder", int(self._placeholder_ts)), False
+                err_hint = self._last_camera_error or f"Connecting to camera ({self.camera_source})..."
+                placeholder = self._create_placeholder_frame(err_hint)
+                ok, jpeg = cv2.imencode('.jpg', placeholder, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+                if ok:
+                    self._placeholder_jpeg = jpeg.tobytes()
+                    self._placeholder_ts = now
+                    return self._placeholder_jpeg, ("placeholder", int(now)), False
+                return None, ("empty",), False
 
-        # Double Buffering: чтение кэшированных детекций под коротким замком results_lock
         with self.results_lock:
             cached_results = list(self.cached_detections)
             last_time = self.last_detection_time
+            det_seq = self._det_seq
 
-        # Если результат свежий (< 0.6 сек): накладываем рамки на свежий кадр
-        if (time.time() - last_time) < 0.6 and cached_results:
+        overlay_active = (time.time() - last_time) < 1.5 and bool(cached_results)
+        cache_key = (cur_seq, overlay_active, det_seq if overlay_active else 0)
+
+        with self._jpeg_cache_lock:
+            if self._cached_jpeg is not None and self._cached_jpeg_key == cache_key:
+                return self._cached_jpeg, cache_key, True
+
+        # Копируем кадр под коротким замком только если нужно перекодировать JPEG
+        with self.frame_lock:
+            latest = self.raw_frame
+            if latest is None:
+                return self._placeholder_jpeg, ("placeholder", int(self._placeholder_ts)), False
+            frame_copy = latest.copy()
+
+        if overlay_active and cached_results:
             for det in cached_results:
-                self._draw_detection(frame, det)
+                self._draw_detection(frame_copy, det)
 
         with self.frame_lock:
-            self.output_frame = frame
-            self._output_frame = frame
+            self.output_frame = frame_copy
+            self._output_frame = frame_copy
 
-        # Кодирование в JPEG выполняется БЕЗ удержания frame_lock с качеством 75
-        ok, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+        ok, jpeg = cv2.imencode('.jpg', frame_copy, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
         if not ok:
-            return None
-        return jpeg.tobytes()
+            return None, ("empty",), True
+
+        jpeg_bytes = jpeg.tobytes()
+        with self._jpeg_cache_lock:
+            self._cached_jpeg = jpeg_bytes
+            self._cached_jpeg_key = cache_key
+
+        return jpeg_bytes, cache_key, True
+
+    def get_jpeg_frame(self) -> Optional[bytes]:
+        """Неблокирующее получение кадра для стрима (использует общий кэш JPEG)."""
+        jpeg_bytes, _, _ = self.get_jpeg_frame_with_meta()
+        return jpeg_bytes
 
     def _draw_detection(self, frame: np.ndarray, det: Dict[str, Any]):
         """Отрисовка только чистой зеленой рамки детекции без текста и вопросиков."""
@@ -935,47 +1027,99 @@ class FaceRecognitionCamera:
             cv2.line(frame, (x, 0), (x, 480), (30, 41, 59), 1)
 
         cv2.putText(frame, "ARGUS KIOSK VISION", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (56, 189, 248), 2)
-        cv2.putText(frame, text, (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (226, 232, 240), 2)
+        safe_text = text.encode("ascii", errors="ignore").decode("ascii") or "Connecting to camera..."
+        cv2.putText(frame, safe_text[:48], (60, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (226, 232, 240), 2)
         t_str = time.strftime("%H:%M:%S")
         cv2.putText(frame, f"STATUS: STANDBY | TIME: {t_str}", (20, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (148, 163, 184), 1)
         return frame
 
-    def start(self, camera_source: str = "0", threshold: float = 0.48, idle_timeout: int = 6, is_active: bool = True, flip_horizontal: bool = True):
-        if self._running:
-            self.stop()
-
-        self.camera_source = str(camera_source)
-        self.video_source = str(camera_source)
-        self.recognition_threshold = threshold
-        self.idle_timeout = idle_timeout
-        self.is_active = is_active
-        self.flip_horizontal = flip_horizontal
-        self.stop_event.clear()
-        self._running = True
-
-        self._capture_thread = threading.Thread(target=self._capture_loop, name="CameraCaptureThread", daemon=True)
-        self._process_thread = threading.Thread(target=self._process_loop, name="CameraProcessThread", daemon=True)
-
-        self._capture_thread.start()
-        self._process_thread.start()
-        print(f"[Камера] Видеомодуль запущен: источник={self.camera_source}, порог={self.recognition_threshold}, зеркало={self.flip_horizontal}")
-
-    def set_flip_horizontal(self, flip: bool):
-        self.flip_horizontal = bool(flip)
-
-    def stop(self):
+    def _stop_locked(self):
+        """Остановка текущей сессии потоков под self._lifecycle_lock."""
         self._running = False
+        if self._session_stop is not None:
+            self._session_stop.set()
         self.stop_event.set()
-        if self._capture_thread and self._capture_thread.is_alive():
-            self._capture_thread.join(timeout=1.5)
-        if self._process_thread and self._process_thread.is_alive():
-            self._process_thread.join(timeout=1.5)
+
+        cap_t = self._capture_thread
+        proc_t = self._process_thread
+        self._capture_thread = None
+        self._process_thread = None
+
+        if cap_t and cap_t.is_alive():
+            cap_t.join(timeout=3.5)
+        if proc_t and proc_t.is_alive():
+            proc_t.join(timeout=2.5)
+
         if self.cap:
             try:
                 self.cap.release()
             except Exception:
                 pass
             self.cap = None
+
+        with self.frame_lock:
+            self.raw_frame = None
+            self._raw_frame = None
+            self.output_frame = None
+            self._output_frame = None
+
+        with self.results_lock:
+            self.cached_detections = []
+            self.last_detection_time = 0.0
+            self._det_seq += 1
+
+        with self._jpeg_cache_lock:
+            self._cached_jpeg = None
+            self._cached_jpeg_key = None
+            self._placeholder_jpeg = None
+
+        self._camera_connected = False
+
+    def start(self, camera_source: str = "0", threshold: float = 0.48, idle_timeout: int = 6, is_active: bool = True, flip_horizontal: bool = True):
+        with self._lifecycle_lock:
+            if self._running or self._capture_thread is not None or self._process_thread is not None:
+                self._stop_locked()
+
+            self.camera_source = str(camera_source).strip()
+            self.video_source = self.camera_source
+            self.recognition_threshold = threshold
+            self.idle_timeout = idle_timeout
+            self.is_active = is_active
+            self.flip_horizontal = flip_horizontal
+            self._last_camera_error = None
+
+            # Создаем индивидуальный Event на сессию, чтобы старые потоки никогда не ожили после restart
+            session_stop = threading.Event()
+            self._session_stop = session_stop
+            self.stop_event = session_stop
+            self._running = True
+
+            self._capture_thread = threading.Thread(
+                target=self._capture_loop,
+                args=(session_stop, self.camera_source),
+                name="CameraCaptureThread",
+                daemon=True,
+            )
+            self._process_thread = threading.Thread(
+                target=self._process_loop,
+                args=(session_stop,),
+                name="CameraProcessThread",
+                daemon=True,
+            )
+
+            self._capture_thread.start()
+            self._process_thread.start()
+            logger.info(
+                f"[Камера] Видеомодуль запущен: источник={self.camera_source}, "
+                f"порог={self.recognition_threshold}, зеркало={self.flip_horizontal}"
+            )
+
+    def set_flip_horizontal(self, flip: bool):
+        self.flip_horizontal = bool(flip)
+
+    def stop(self):
+        with self._lifecycle_lock:
+            self._stop_locked()
 
     def restart_camera(self, camera_source: str, threshold: Optional[float] = None, idle_timeout: Optional[int] = None, is_active: Optional[bool] = None, flip_horizontal: Optional[bool] = None):
         th = threshold if threshold is not None else self.recognition_threshold
@@ -984,52 +1128,127 @@ class FaceRecognitionCamera:
         flip = flip_horizontal if flip_horizontal is not None else self.flip_horizontal
         self.start(camera_source=camera_source, threshold=th, idle_timeout=to, is_active=act, flip_horizontal=flip)
 
-    def _capture_loop(self):
-        """Непрерывный захват свежих кадров в отдельном потоке (25-30 FPS)."""
-        reconnect_timer = time.time()
-        self.cap = self._open_capture_device(self.camera_source)
+    def _capture_loop(self, stop_ev: threading.Event, source: str):
+        """Непрерывный захват свежих кадров в отдельном потоке с защитой от спина и спама в логи."""
+        cap: Optional[cv2.VideoCapture] = None
+        backoff_steps = [2.0, 5.0, 10.0, 20.0, 30.0]
+        backoff_idx = 0
+        next_open_attempt = 0.0
+        consecutive_failures = 0
+        has_received_first_frame = False
+        error_logged = False
 
-        while not self.stop_event.is_set() and self._running:
-            if self.cap is None or not self.cap.isOpened():
-                if time.time() - reconnect_timer > 3.0:
-                    reconnect_timer = time.time()
-                    try:
-                        if self.cap:
-                            self.cap.release()
-                    except Exception:
-                        pass
-                    self.cap = self._open_capture_device(self.camera_source)
-                time.sleep(0.5)
-                continue
+        try:
+            while not stop_ev.is_set() and self._running:
+                if cap is None or not cap.isOpened():
+                    now = time.time()
+                    if now >= next_open_attempt:
+                        if cap is not None:
+                            try:
+                                cap.release()
+                            except Exception:
+                                pass
+                            cap = None
 
-            try:
-                ret, frame = self.cap.read()
-                if not ret or frame is None or frame.size == 0:
-                    time.sleep(0.01)
+                        opened_cap = self._open_capture_device(source)
+                        if stop_ev.is_set() or not self._running:
+                            if opened_cap is not None:
+                                try:
+                                    opened_cap.release()
+                                except Exception:
+                                    pass
+                            break
+
+                        if opened_cap is not None and opened_cap.isOpened():
+                            cap = opened_cap
+                            self.cap = cap
+                            backoff_idx = 0
+                            consecutive_failures = 0
+                            has_received_first_frame = False
+                            error_logged = False
+                            self._last_camera_error = None
+                        else:
+                            delay = backoff_steps[min(backoff_idx, len(backoff_steps) - 1)]
+                            backoff_idx += 1
+                            next_open_attempt = time.time() + delay
+                            self._camera_connected = False
+                            self._last_camera_error = f"Camera source '{source}' unavailable"
+                            if not error_logged:
+                                logger.warning(f"[Камера] Источник '{source}' недоступен. Повторное подключение в фоне.")
+                                error_logged = True
+                    stop_ev.wait(0.5)
                     continue
 
-                if self.flip_horizontal:
-                    frame = cv2.flip(frame, 1)
+                loop_t0 = time.time()
+                try:
+                    ret, frame = cap.read()
+                    if stop_ev.is_set() or not self._running:
+                        break
 
-                # Сохраняем свежие кадры под минимальным замком
-                with self.frame_lock:
-                    self.raw_frame = frame
-                    self._raw_frame = frame
+                    if not ret or frame is None or frame.size == 0:
+                        consecutive_failures += 1
+                        # На холодном старте (AVFoundation/V4L2) допускаем до 100 попыток прогрева (~3с)
+                        fail_limit = 50 if has_received_first_frame else 100
+                        if consecutive_failures >= fail_limit:
+                            logger.warning(f"[Камера] Потерян сигнал источника '{source}', переподключение...")
+                            self._camera_connected = False
+                            self._last_camera_error = f"Signal lost ({source})"
+                            with self.frame_lock:
+                                self.raw_frame = None
+                                self._raw_frame = None
+                            try:
+                                cap.release()
+                            except Exception:
+                                pass
+                            cap = None
+                            self.cap = None
+                            consecutive_failures = 0
+                            has_received_first_frame = False
+                            next_open_attempt = time.time() + 2.0
+                            continue
+                        stop_ev.wait(0.03)
+                        continue
 
-            except cv2.error:
-                # Перехват ошибки (-215:Assertion failed) при временной недоступности камеры
-                time.sleep(0.05)
-            except Exception:
-                time.sleep(0.05)
+                    consecutive_failures = 0
+                    has_received_first_frame = True
+                    if not self._camera_connected:
+                        self._camera_connected = True
+                        self._last_camera_error = None
+                        logger.info(f"[Камера] Видеопоток активен ({frame.shape[1]}x{frame.shape[0]}, источник={source})")
 
-        if self.cap:
-            try:
-                self.cap.release()
-            except Exception:
-                pass
-            self.cap = None
+                    if self.flip_horizontal:
+                        frame = cv2.flip(frame, 1)
 
-    def _run_detection(self, frame_to_process: np.ndarray) -> Tuple[List[Tuple[Tuple[int, int, int, int], np.ndarray, float]], float]:
+                    with self.frame_lock:
+                        self.raw_frame = frame
+                        self._raw_frame = frame
+                        self._frame_seq += 1
+
+                    elapsed = time.time() - loop_t0
+                    if elapsed < 0.025:
+                        stop_ev.wait(0.025 - elapsed)
+
+                except cv2.error:
+                    stop_ev.wait(0.05)
+                except Exception:
+                    stop_ev.wait(0.05)
+        finally:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+            if self.cap is cap:
+                self.cap = None
+            self._camera_connected = False
+
+    def _run_detection(
+        self,
+        frame_to_process: np.ndarray,
+        max_faces: Optional[int] = 1,
+        det_size: int = 320,
+        skip_arcface: bool = False,
+    ) -> Tuple[List[Tuple[Tuple[int, int, int, int], np.ndarray, float]], float]:
         """
         Даунскейл кадра перед детекцией (ширина не более 640px)
         и инференс детектора SCRFD Buffalo_l без удержания замков.
@@ -1045,7 +1264,12 @@ class FaceRecognitionCamera:
             scale = 1.0
             small_frame = frame_to_process
 
-        faces_data = self.vision.detect_and_align(small_frame)
+        faces_data = self.vision.detect_and_align(
+            small_frame,
+            max_faces=max_faces,
+            det_size=det_size,
+            skip_arcface=skip_arcface,
+        )
         return faces_data, scale
 
     def _run_recognition(
@@ -1100,18 +1324,18 @@ class FaceRecognitionCamera:
             if c_norm > 1e-6:
                 current_embedding = current_embedding / c_norm
 
-            for t_id, teacher in teachers_snapshot.items():
-                embs = teacher.get("embeddings")
-                if embs is None or len(embs) == 0:
-                    continue
-                # Мультивекторное сравнение со всеми снимками преподавателя
-                sims = np.dot(embs, current_embedding)
-                teacher_max_sim = float(np.max(sims))
-                if teacher_max_sim > face_max_sim:
-                    face_max_sim = teacher_max_sim
-                    if teacher_max_sim >= self.recognition_threshold:
-                        matched_id = t_id
-                        matched_name = teacher.get("name") or teacher.get("full_name")
+                for t_id, teacher in teachers_snapshot.items():
+                    embs = teacher.get("embeddings")
+                    if embs is None or len(embs) == 0:
+                        continue
+                    # Мультивекторное сравнение со всеми снимками преподавателя
+                    sims = np.dot(embs, current_embedding)
+                    teacher_max_sim = float(np.max(sims))
+                    if teacher_max_sim > face_max_sim:
+                        face_max_sim = teacher_max_sim
+                        if teacher_max_sim >= self.recognition_threshold:
+                            matched_id = t_id
+                            matched_name = teacher.get("name") or teacher.get("full_name")
 
             # В результатах для оверлея сохраняем только bbox для чистой рамки
             results.append({
@@ -1129,50 +1353,131 @@ class FaceRecognitionCamera:
 
         return results, best_id, best_name, best_sim
 
-    def _process_loop(self):
-        """Неблокирующий поток инференса с кэшированием результатов детекции."""
-        while not self.stop_event.is_set() and self._running:
-            # 1. Минимальная область видимости frame_lock:
-            # Замок удерживается только на время быстрого копирования кадра (1-2 миллисекунды)
+    def _handle_idle_state(self, now: float):
+        """Проверка таймаутов ухода преподавателя и сброс UI статуса при простое."""
+        if (now - self._last_face_seen_time) > 1.5 and not self._face_recognition_idle_broadcasted:
+            idle_payload = {
+                "type": "FACE_RECOGNITION",
+                "event": "FACE_RECOGNITION",
+                "recognized": False,
+                "name": None,
+                "similarity": 0.0,
+                "teacher_id": None,
+            }
+            self._last_face_rec_payload = idle_payload
+            self._last_face_rec_time = now
+            self._face_recognition_idle_broadcasted = True
+            self.ws_manager.broadcast_from_thread(idle_payload)
+
+        if self._active_teacher_id is not None and (now - self._last_seen_time) > self.idle_timeout:
+            logger.info(f"Преподаватель #{self._active_teacher_id} отошел от экрана. Возврат в общее расписание.")
+            self._active_teacher_id = None
+            self._history.clear()
+            self._last_detected_id = None
+            self.ws_manager.broadcast_from_thread({
+                "event": "TIMEOUT_EXPIRED",
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+
+    def _process_loop(self, stop_ev: threading.Event):
+        """Неблокирующий поток инференса с кэшированием детекций, детектором движения и ограничением CPU."""
+        last_processed_seq = -1
+        prev_tiny: Optional[np.ndarray] = None
+        last_full_scan_time = 0.0
+        last_arcface_time = 0.0
+
+        while not stop_ev.is_set() and self._running:
+            now = time.time()
+
+            # 1. Минимальная область видимости frame_lock (только проверка seq и копия)
             with self.frame_lock:
-                if self.raw_frame is None:
+                cur_seq = self._frame_seq
+                if self.raw_frame is None or not self.is_active or cur_seq == last_processed_seq:
                     frame_to_process = None
                 else:
                     frame_to_process = self.raw_frame.copy()
+                    last_processed_seq = cur_seq
 
-            if frame_to_process is None or not self.is_active:
-                if self._active_teacher_id is not None:
-                    if time.time() - self._last_seen_time > self.idle_timeout:
-                        self._active_teacher_id = None
-                        self._history.clear()
-                        self._last_detected_id = None
-                        self.ws_manager.broadcast_from_thread({
-                            "event": "TIMEOUT_EXPIRED",
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        })
-                time.sleep(0.02)
+            if frame_to_process is None:
+                self._handle_idle_state(now)
+                stop_ev.wait(0.05)
                 continue
 
             # Pass-through сквозной режим, если модели InsightFace отсутствуют
             if self.vision is None:
-                time.sleep(0.05)
+                stop_ev.wait(0.1)
                 continue
 
-            # 2. ВЕСЬ ИНФЕРЕНС, DETECT, WARP И ARCFACE ДЕЛАЮТСЯ БЕЗ КАКИХ-ЛИБО БЛОКИРОВОК!
-            faces, scale = self._run_detection(frame_to_process)
-            results, detected_cand_id, detected_cand_name, max_sim = self._run_recognition(frame_to_process, faces, scale)
+            # 2. Быстрый сглаженный детектор движения для экономии CPU (игнорирует шум сенсора)
+            tiny_gray = cv2.GaussianBlur(
+                cv2.cvtColor(cv2.resize(frame_to_process, (64, 48)), cv2.COLOR_BGR2GRAY),
+                (5, 5),
+                0,
+            )
+            motion_pct = 1.0
+            motion_mean = 10.0
+            if prev_tiny is not None:
+                diff = cv2.absdiff(prev_tiny, tiny_gray)
+                motion_pct = float(np.mean(diff > 14))
+                motion_mean = float(np.mean(diff))
+            prev_tiny = tiny_gray
+            has_motion = (motion_pct >= 0.015) or (motion_mean >= 2.2)
+
+            face_tracking_active = (
+                self._active_teacher_id is not None
+                or bool(self.cached_detections)
+                or (now - self._last_face_seen_time) < 3.0
+            )
+            periodic_scan_due = (now - last_full_scan_time) >= 1.5
+
+            if not face_tracking_active and not has_motion and not periodic_scan_due:
+                self._handle_idle_state(now)
+                stop_ev.wait(0.2)
+                continue
+
+            # 3. Адаптивный запуск ArcFace (ResNet-50): при удержании лица в кадре сверяем вектор периодически,
+            #    а в промежутках используем только быстрый SCRFD 320x320 (~100мс) для плавной рамки
+            arcface_interval = 1.2 if self._active_teacher_id is not None else 0.7
+            run_arcface_now = (now - last_arcface_time) >= arcface_interval
+
+            t_infer_start = time.time()
+            last_full_scan_time = t_infer_start
+            faces, scale = self._run_detection(
+                frame_to_process,
+                max_faces=1,
+                det_size=320,
+                skip_arcface=not run_arcface_now,
+            )
+            results, detected_cand_id, detected_cand_name, max_sim = self._run_recognition(
+                frame_to_process, faces, scale
+            )
+            infer_elapsed = time.time() - t_infer_start
 
             now = time.time()
+            if faces and run_arcface_now:
+                last_arcface_time = now
+            elif not faces:
+                last_arcface_time = 0.0
 
-            # 3. Кэширование рамок (Double Buffering) под отдельным коротким замком
+            # 4. Кэширование рамок (Double Buffering) под отдельным коротким замком
             with self.results_lock:
                 if results:
                     self.cached_detections = results
                     self.last_detection_time = now
-                elif (now - self.last_detection_time) >= 0.6:
+                    self._det_seq += 1
+                elif self.cached_detections and (now - self.last_detection_time) >= 1.5:
                     self.cached_detections = []
+                    self._det_seq += 1
 
-            # 4. Рассылка статуса FACE_RECOGNITION через WebSocket
+            # Если лицо видно, но на этом проходе ArcFace был пропущен — обновляем таймер присутствия без сброса UI статуса
+            if faces and not run_arcface_now:
+                self._last_face_seen_time = now
+                if self._active_teacher_id is not None:
+                    self._last_seen_time = now
+                stop_ev.wait(0.22)
+                continue
+
+            # 5. Рассылка статуса FACE_RECOGNITION через WebSocket
             face_rec_payload = None
             if faces:
                 self._last_face_seen_time = now
@@ -1226,10 +1531,9 @@ class FaceRecognitionCamera:
                     self._last_face_rec_time = now
                     self.ws_manager.broadcast_from_thread(face_rec_payload)
 
-            # Сглаживание предсказаний через скользящее окно
+            # 6. Сглаживание предсказаний через скользящее окно
             self._history.append((detected_cand_id, detected_cand_name, max_sim))
 
-            # Голосование большинства (Counter)
             valid_ids = [item[0] for item in self._history if item[0] is not None]
             confirmed_teacher_id = None
             confirmed_teacher_name = None
@@ -1279,6 +1583,10 @@ class FaceRecognitionCamera:
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                         })
 
+            # 7. Адаптивная пауза после инференса, чтобы CPU никогда не упирался в 100%
+            cooldown = max(0.22, min(0.50, infer_elapsed * 0.6))
+            stop_ev.wait(cooldown)
+
     def get_raw_snapshot(self) -> Optional[np.ndarray]:
         with self.frame_lock:
             frame = self.raw_frame if self.raw_frame is not None else self._raw_frame
@@ -1295,15 +1603,17 @@ class FaceRecognitionCamera:
         return None
 
     def generate_mjpeg_stream(self):
-        """Синхронный генератор кадров с паузой 0.033с (~30 FPS)."""
+        """Синхронный генератор кадров с кэшированием и адаптивной частотой."""
+        last_key = None
         while True:
-            frame_bytes = self.get_jpeg_frame()
-            if frame_bytes:
+            frame_bytes, cur_key, is_live = self.get_jpeg_frame_with_meta()
+            if frame_bytes and cur_key != last_key:
+                last_key = cur_key
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
                 )
-            time.sleep(0.033)
+            time.sleep(0.035 if is_live else 0.5)
 
 
 # Глобальный синглтон

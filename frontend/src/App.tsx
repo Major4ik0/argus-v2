@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Search,
   Layers,
+  BookOpen,
   CheckCircle2,
   Circle,
   Sparkles,
@@ -692,7 +693,31 @@ export function App() {
     }
   })
 
-  // Синхронизация темы оформления с сервера
+  const syncMyPermissions = () => {
+    const token = localStorage.getItem('auth_token')
+    if (!token || token === 'guest_session' || token === 'dev_token') {
+      return
+    }
+    axios
+      .get('/api/v1/admin/me/permissions', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => {
+        if (res.data?.authenticated && res.data?.permissions) {
+          const nextRole = res.data.is_admin ? 'admin' : 'user'
+          const nextSuper = Boolean(res.data.is_superadmin)
+          setUserRole(nextRole)
+          setIsSuperAdmin(nextSuper)
+          setUserPermissions(res.data.permissions)
+          localStorage.setItem('user_role', nextRole)
+          localStorage.setItem('is_superadmin', String(nextSuper))
+          localStorage.setItem('user_permissions', JSON.stringify(res.data.permissions))
+        }
+      })
+      .catch(() => {})
+  }
+
+  // Синхронизация темы оформления и прав пользователя с сервера
   useEffect(() => {
     fetch('/api/v1/admin/settings')
       .then((r) => r.json())
@@ -703,6 +728,8 @@ export function App() {
         }
       })
       .catch(() => {})
+
+    syncMyPermissions()
   }, [])
 
   const handleLoginSuccess = (
@@ -717,7 +744,11 @@ export function App() {
     setUserRole(role)
     setIsSuperAdmin(superAdminFlag)
     setCurrentUsername(user)
-    if (permissions) setUserPermissions(permissions)
+    if (permissions) {
+      setUserPermissions(permissions)
+    } else {
+      setUserPermissions(null)
+    }
     setCurrentPage('schedule')
 
     localStorage.setItem('user_role', role)
@@ -726,6 +757,7 @@ export function App() {
   }
 
   const handleLogout = () => {
+    axios.post('/api/v1/admin/logout').catch(() => {})
     localStorage.removeItem('auth_token')
     localStorage.removeItem('user_role')
     localStorage.removeItem('is_superadmin')
@@ -745,7 +777,11 @@ export function App() {
   }
 
   const isAdmin = userRole === 'admin'
-  const canViewAdmin = isSuperAdmin || (isAdmin && (userPermissions?.can_view_admin ?? true))
+  const canViewAdmin = isSuperAdmin || Boolean(userPermissions ? userPermissions.can_view_admin : isAdmin)
+  const canEditSchedule = isSuperAdmin || Boolean(userPermissions ? userPermissions.can_edit_schedule : isAdmin)
+  const canManageTheming = isSuperAdmin || Boolean(userPermissions ? userPermissions.can_manage_theming : isAdmin)
+  const canViewKafedra = isSuperAdmin || Boolean(userPermissions?.can_view_kafedra)
+  const canViewJournal = isSuperAdmin || Boolean(userPermissions?.can_view_journal)
 
   return (
     <div
@@ -1021,16 +1057,35 @@ export function App() {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => {
-                      setIsProfileMenuOpen(false)
-                      window.location.href = '/kafedra/'
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl transition"
-                  >
-                    <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>Личный состав</span>
-                  </button>
+                  {canViewKafedra && (
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false)
+                        window.location.href = '/kafedra/'
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl transition"
+                    >
+                      <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Личный состав</span>
+                    </button>
+                  )}
+
+                  {canViewJournal && (
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false)
+                        const tok = localStorage.getItem('auth_token')
+                        window.location.href =
+                          tok && tok !== 'guest_session' && tok !== 'dev_token'
+                            ? `/journal/sso?token=${encodeURIComponent(tok)}`
+                            : '/journal/'
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-xl transition"
+                    >
+                      <BookOpen className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                      <span>Электронный журнал</span>
+                    </button>
+                  )}
 
                   <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
 
@@ -1495,7 +1550,7 @@ export function App() {
                                               facultyColors={facultyColorsMap}
                                               isDense={isDense}
                                               fontScale={scheduleFontScale}
-                                              isAdmin={isAdmin}
+                                              isAdmin={canEditSchedule}
                                               isCut={isCutItem}
                                               isSelected={Boolean(isSelected)}
                                               isSwapMode={isSwapMode}
@@ -1522,7 +1577,7 @@ export function App() {
                                           isDense ? 'h-6' : 'h-8'
                                         }`}
                                       >
-                                        {isAdmin && clipboard ? (
+                                        {canEditSchedule && clipboard ? (
                                           <button
                                             onClick={() => handlePaste(tId, dateStr, hourIndex + 1)}
                                             className="opacity-0 group-hover/cell:opacity-100 flex items-center gap-1 px-2 py-1 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 text-[10px] font-bold hover:bg-amber-200 transition shadow-sm"
@@ -1531,7 +1586,7 @@ export function App() {
                                             <ClipboardPaste className="w-3 h-3" />
                                             <span>Вставить</span>
                                           </button>
-                                        ) : isAdmin ? (
+                                        ) : canEditSchedule ? (
                                           <button
                                             onClick={() =>
                                               setLessonModalConfig({
@@ -1586,7 +1641,7 @@ export function App() {
               </div>
             </div>
 
-            {isAdmin && (
+            {canManageTheming && (
               <button
                 type="button"
                 onClick={() => setIsColorsModalOpen(true)}
@@ -1615,7 +1670,10 @@ export function App() {
       {isAdminModalOpen && (
         <AdminPanel
           isModal={true}
-          onClose={() => setIsAdminModalOpen(false)}
+          onClose={() => {
+            setIsAdminModalOpen(false)
+            syncMyPermissions()
+          }}
           currentUser={currentUsername}
         />
       )}

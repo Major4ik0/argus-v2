@@ -91,6 +91,11 @@ class BroadcastLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         try:
+            # Исключаем повторную обработку записи при propagate=True в иерархии логгеров
+            if getattr(record, "_argus_broadcasted", False):
+                return
+            setattr(record, "_argus_broadcasted", True)
+
             msg = self.format(record)
             entry = {
                 "timestamp": datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S"),
@@ -114,10 +119,10 @@ def setup_log_broadcaster(loop: asyncio.AbstractEventLoop):
     root_logger = logging.getLogger()
     if broadcast_log_handler not in root_logger.handlers:
         root_logger.addHandler(broadcast_log_handler)
-    # Также подключаем к логгерам uvicorn и argus
+    # Также подключаем к логгерам uvicorn (у которых propagate=False) и argus
     for log_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "argus", "fastapi"):
         l = logging.getLogger(log_name)
-        if broadcast_log_handler not in l.handlers:
+        if not l.propagate and broadcast_log_handler not in l.handlers:
             l.addHandler(broadcast_log_handler)
 
 
@@ -135,8 +140,10 @@ async def logs_websocket_endpoint(websocket: WebSocket):
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        log_ws_manager.disconnect(websocket)
+        pass
     except Exception:
+        pass
+    finally:
         log_ws_manager.disconnect(websocket)
 
 

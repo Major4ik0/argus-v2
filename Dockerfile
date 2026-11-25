@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Создание пустой целевой директории под монтирование
-RUN mkdir -p /app/models/insightface/models/buffalo_l /app/backend/models /app/backend/uploads/teachers /app/backend/uploads/photos /app/backend/data
+RUN mkdir -p /app/models/insightface/models/buffalo_l /app/backend/models /app/backend/uploads/teachers /app/backend/uploads/photos /app/backend/data/journal/uploads
 
 # Зависимости Python
 COPY backend/requirements.txt ./

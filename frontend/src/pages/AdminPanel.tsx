@@ -92,17 +92,21 @@ const getPhotoUrl = (url?: string | null): string => {
   return url.startsWith('/') ? url : `/${url}`
 }
 
+interface AdminPermissions {
+  can_view_admin: boolean
+  can_edit_schedule: boolean
+  can_manage_kiosk: boolean
+  can_manage_theming: boolean
+  can_view_kafedra: boolean
+  can_view_journal: boolean
+}
+
 interface AdminUserItem {
   username: string
   added_by: string
   created_at: string
   is_superadmin: boolean
-  permissions: {
-    can_view_admin: boolean
-    can_edit_schedule: boolean
-    can_manage_kiosk: boolean
-    can_manage_theming: boolean
-  }
+  permissions: AdminPermissions
 }
 
 interface LogEntry {
@@ -279,11 +283,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [securityNotice, setSecurityNotice] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [adminsList, setAdminsList] = useState<AdminUserItem[]>([])
   const [newAdminLogin, setNewAdminLogin] = useState('')
-  const [newAdminPerms, setNewAdminPerms] = useState({
+  const [newAdminPerms, setNewAdminPerms] = useState<AdminPermissions>({
     can_view_admin: true,
     can_edit_schedule: true,
     can_manage_kiosk: true,
     can_manage_theming: true,
+    can_view_kafedra: true,
+    can_view_journal: true,
   })
   const [dbConfig, setDbConfig] = useState({
     host: 'localhost',
@@ -1015,6 +1021,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (usersRes.data) setAdminsList(usersRes.data)
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Ошибка добавления администратора')
+    }
+  }
+
+  // Переключение права доступа у существующего пользователя
+  const handleToggleAdminPermission = async (
+    targetUser: string,
+    currentPerms: AdminPermissions,
+    key: keyof AdminPermissions
+  ) => {
+    const updated: AdminPermissions = {
+      ...currentPerms,
+      [key]: !currentPerms[key],
+    }
+    try {
+      await axios.put(`/api/v1/admin/users/${targetUser}/permissions`, {
+        current_user: currentUser,
+        permissions: updated,
+      })
+      const usersRes = await axios.get('/api/v1/admin/users')
+      if (usersRes.data) setAdminsList(usersRes.data)
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Ошибка обновления прав')
     }
   }
 
@@ -3543,12 +3571,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
-              {/* Карточка 2: Управление администраторами */}
+              {/* Карточка 2: Управление доступом и правами */}
               <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm">Управление администраторами</h3>
+                  <h3 className="font-bold text-slate-900 text-sm">Управление пользователями и правами</h3>
                   <p className="text-xs text-slate-500">
-                    Назначение доменных пользователей с гибким разграничением прав
+                    Назначение доменных пользователей с гибким разграничением доступа к разделам
                   </p>
                 </div>
 
@@ -3575,7 +3603,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                     <label className="flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="checkbox"
@@ -3585,7 +3613,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         }
                         className="rounded text-blue-600"
                       />
-                      <span>Просмотр</span>
+                      <span>Административный центр</span>
                     </label>
 
                     <label className="flex items-center gap-1.5 cursor-pointer">
@@ -3597,7 +3625,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         }
                         className="rounded text-blue-600"
                       />
-                      <span>Расписание</span>
+                      <span>Правка расписания</span>
                     </label>
 
                     <label className="flex items-center gap-1.5 cursor-pointer">
@@ -3609,7 +3637,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         }
                         className="rounded text-blue-600"
                       />
-                      <span>Табло</span>
+                      <span>Табло и камера</span>
                     </label>
 
                     <label className="flex items-center gap-1.5 cursor-pointer">
@@ -3621,7 +3649,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         }
                         className="rounded text-blue-600"
                       />
-                      <span>Темы</span>
+                      <span>Темы и цвета</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.can_view_kafedra}
+                        onChange={(e) =>
+                          setNewAdminPerms({ ...newAdminPerms, can_view_kafedra: e.target.checked })
+                        }
+                        className="rounded text-emerald-600"
+                      />
+                      <span className="font-semibold text-emerald-800">Личный состав</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.can_view_journal}
+                        onChange={(e) =>
+                          setNewAdminPerms({ ...newAdminPerms, can_view_journal: e.target.checked })
+                        }
+                        className="rounded text-sky-600"
+                      />
+                      <span className="font-semibold text-sky-800">Электронный журнал</span>
                     </label>
                   </div>
                 </form>
@@ -3640,7 +3692,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <tbody className="divide-y divide-slate-100">
                       {adminsList.map((a) => (
                         <tr key={a.username} className="hover:bg-slate-50/80 transition">
-                          <td className="py-2 px-4">
+                          <td className="py-2.5 px-4 whitespace-nowrap">
                             <span className="font-bold text-slate-900">{a.username}</span>
                             {a.is_superadmin && (
                               <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold">
@@ -3648,27 +3700,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-4 text-slate-500">{a.added_by || 'Система'}</td>
-                          <td className="py-2 px-4">
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              {a.permissions?.can_edit_schedule && (
-                                <span className="px-1.5 py-0.2 bg-emerald-50 text-emerald-700 rounded border border-emerald-200">
-                                  Расписание
-                                </span>
-                              )}
-                              {a.permissions?.can_manage_kiosk && (
-                                <span className="px-1.5 py-0.2 bg-sky-50 text-sky-700 rounded border border-sky-200">
-                                  Табло
-                                </span>
-                              )}
-                              {a.permissions?.can_manage_theming && (
-                                <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded border border-slate-200">
-                                  Темы
-                                </span>
-                              )}
+                          <td className="py-2.5 px-4 text-slate-500 whitespace-nowrap">{a.added_by || 'Система'}</td>
+                          <td className="py-2.5 px-4">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
+                              {(
+                                [
+                                  ['can_view_admin', 'Админка'],
+                                  ['can_edit_schedule', 'Расписание'],
+                                  ['can_manage_kiosk', 'Табло'],
+                                  ['can_manage_theming', 'Темы'],
+                                  ['can_view_kafedra', 'Личный состав'],
+                                  ['can_view_journal', 'Электронный журнал'],
+                                ] as Array<[keyof AdminPermissions, string]>
+                              ).map(([permKey, label]) => (
+                                <label
+                                  key={permKey}
+                                  className={`flex items-center gap-1 select-none ${
+                                    a.is_superadmin ? 'opacity-60 cursor-default' : 'cursor-pointer'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled={a.is_superadmin}
+                                    checked={Boolean(a.permissions?.[permKey])}
+                                    onChange={() =>
+                                      handleToggleAdminPermission(a.username, a.permissions, permKey)
+                                    }
+                                    className="rounded text-blue-600 focus:ring-0"
+                                  />
+                                  <span className="text-slate-700">{label}</span>
+                                </label>
+                              ))}
                             </div>
                           </td>
-                          <td className="py-2 px-4 text-right">
+                          <td className="py-2.5 px-4 text-right">
                             {!a.is_superadmin && (
                               <button
                                 type="button"
